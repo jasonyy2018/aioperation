@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { UserProfile, PermissionKey } from '@/types';
 import { ROLE_DEFINITIONS, hasPermission } from '@/lib/constants/users';
+import { useAuth } from '@/components/auth/AuthContext';
 
 export type NavTabId =
   | 'hotspot'

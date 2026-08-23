@@ -3,7 +3,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        - NODE_ENV=production
     container_name: automedia_ai_platform
+    image: automedia-ai-platform:latest
     restart: unless-stopped
     ports:
       - "8765:8765"
@@ -11,8 +14,26 @@ services:
       - NODE_ENV=production
       - PORT=8765
       - HOSTNAME=0.0.0.0
+      # AI API Keys (passed from host or set via docker-compose.yml env)
       - MM_API_KEY=${MM_API_KEY}
       - HY_API_KEY=${HY_API_KEY}
       - AGNES_API_KEY=${AGNES_API_KEY}
       - ARK_API_KEY=${ARK_API_KEY}
       - SEEDANCE_MINI_API_KEY=${SEEDANCE_MINI_API_KEY}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8765/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - automedia-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  automedia-net:
+    driver: bridge

@@ -21,6 +21,8 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "10mb",
     },
   },
+  // Explicitly declare middleware for Next.js 15+
+  // The middleware.ts file is automatically picked up
 };
 
 export default nextConfig;

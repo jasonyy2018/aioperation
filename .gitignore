@@ -29,6 +29,10 @@ yarn-error.log*
 .env
 !.env.example
 
+# api key protection - NEVER commit real keys
+.env.production
+.env.staging
+
 # vercel
 .vercel
 
@@ -51,3 +55,7 @@ env/
 .codebuddy/
 *.swp
 *.swo
+
+# Unused legacy files
+server.py
+index.html
