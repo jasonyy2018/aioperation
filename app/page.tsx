@@ -35,7 +35,8 @@ import {
 import { safeJsonParse } from '@/lib/utils';
 
 export default function HomePage() {
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(true);
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+  const [isHydrated, setIsHydrated] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<NavTabId>('mandala');
 
   // Persistent States
@@ -62,10 +63,6 @@ export default function HomePage() {
   useEffect(() => {
     try {
       if (typeof window !== 'undefined') {
-        const savedAuth = localStorage.getItem('automedia_is_logged_in');
-        if (savedAuth !== null) {
-          setIsLoggedIn(savedAuth === 'true');
-        }
         const savedModels = localStorage.getItem('automedia_models');
         if (savedModels) {
           setModels(safeJsonParse(savedModels, DEFAULT_MODELS));
@@ -86,13 +83,26 @@ export default function HomePage() {
         if (savedUsers) {
           setUsers(safeJsonParse(savedUsers, DEFAULT_USERS));
         }
+        
+        // Strict Login Verification
+        const savedAuth = localStorage.getItem('automedia_is_logged_in');
         const savedCurrentUser = localStorage.getItem('automedia_current_user');
-        if (savedCurrentUser) {
-          setCurrentUser(safeJsonParse(savedCurrentUser, DEFAULT_USERS[0]));
+        if (savedAuth === 'true' && savedCurrentUser) {
+          const user = safeJsonParse<UserProfile | null>(savedCurrentUser, null);
+          if (user && user.status === 'active') {
+            setCurrentUser(user);
+            setIsLoggedIn(true);
+          } else {
+            setIsLoggedIn(false);
+          }
+        } else {
+          setIsLoggedIn(false);
         }
       }
     } catch (e) {
       console.error('Failed to load local storage state:', e);
+    } finally {
+      setIsHydrated(true);
     }
   }, []);
 
@@ -185,6 +195,15 @@ export default function HomePage() {
     const updated = [asset, ...assets];
     updateAssets(updated);
   };
+
+  // While reading localStorage on initial client mount
+  if (!isHydrated) {
+    return (
+      <div className="min-h-screen w-full bg-slate-950 flex items-center justify-center">
+        <div className="w-8 h-8 rounded-full border-2 border-rose-500 border-t-transparent animate-spin" />
+      </div>
+    );
+  }
 
   // If not logged in, render the login & registration page
   if (!isLoggedIn) {
