@@ -214,7 +214,7 @@ export default function HomePage() {
 
         <main className="flex-1 overflow-y-auto p-8 scrollbar-thin">
           <div className="max-w-7xl mx-auto pb-12">
-            {renderModule('users',
+            {activeTab === 'users' && renderModule('users',
               <UserManager
                 users={users}
                 currentUser={currentUser}
@@ -241,7 +241,7 @@ export default function HomePage() {
               />
             )}
 
-            {renderModule('mandala',
+            {activeTab === 'mandala' && renderModule('mandala',
               <MandalaTopicPlanner
                 models={models}
                 prompts={prompts}
@@ -251,7 +251,7 @@ export default function HomePage() {
               />
             )}
 
-            {renderModule('comic',
+            {activeTab === 'comic' && renderModule('comic',
               <ComicStoryboardStudio
                 models={models}
                 prompts={prompts}
@@ -261,7 +261,7 @@ export default function HomePage() {
               />
             )}
 
-            {renderModule('photo',
+            {activeTab === 'photo' && renderModule('photo',
               <CommercialPhotoStudio
                 models={models}
                 prompts={prompts}
@@ -269,7 +269,7 @@ export default function HomePage() {
               />
             )}
 
-            {renderModule('live',
+            {activeTab === 'live' && renderModule('live',
               <LiveStreamingCockpit
                 models={models}
                 prompts={prompts}
@@ -277,18 +277,18 @@ export default function HomePage() {
               />
             )}
 
-            {renderModule('training',
+            {activeTab === 'training' && renderModule('training',
               <TrainingLmsDashboard models={models} prompts={prompts} assets={assets} />
             )}
 
-            {renderModule('hotspot',
+            {activeTab === 'hotspot' && renderModule('hotspot',
               <HotspotDiscovery
                 onQuickGenerateArticle={handleQuickArticle}
                 onQuickGenerateVideo={handleQuickVideo}
               />
             )}
 
-            {renderModule('article',
+            {activeTab === 'article' && renderModule('article',
               <ArticleGenerator
                 initialTopic={articlePrefill.topic}
                 initialSummary={articlePrefill.summary}
@@ -298,7 +298,7 @@ export default function HomePage() {
               />
             )}
 
-            {renderModule('video',
+            {activeTab === 'video' && renderModule('video',
               <VideoScriptGenerator
                 initialTheme={videoPrefill.theme}
                 initialSummary={videoPrefill.summary}
@@ -308,23 +308,23 @@ export default function HomePage() {
               />
             )}
 
-            {renderModule('image',
+            {activeTab === 'image' && renderModule('image',
               <ImageStudio onSaveAsset={handleSaveAsset} models={models} prompts={prompts} />
             )}
 
-            {renderModule('video-create',
+            {activeTab === 'video-create' && renderModule('video-create',
               <VideoStudio onSaveAsset={handleSaveAsset} models={models} prompts={prompts} />
             )}
 
-            {renderModule('comment',
+            {activeTab === 'comment' && renderModule('comment',
               <CommentDeriver onSaveAsset={handleSaveAsset} models={models} prompts={prompts} />
             )}
 
-            {renderModule('smart-reply',
+            {activeTab === 'smart-reply' && renderModule('smart-reply',
               <SmartReply models={models} prompts={prompts} />
             )}
 
-            {renderModule('accounts',
+            {activeTab === 'accounts' && renderModule('accounts',
               <AccountMatrix
                 accounts={accounts}
                 onAddAccount={(acc) => updateAccounts([acc, ...accounts])}
@@ -337,7 +337,7 @@ export default function HomePage() {
               />
             )}
 
-            {renderModule('assets',
+            {activeTab === 'assets' && renderModule('assets',
               <AssetLibrary
                 assets={assets}
                 onDeleteAsset={(id) => updateAssets(assets.filter((a) => a.id !== id))}
@@ -345,9 +345,9 @@ export default function HomePage() {
               />
             )}
 
-            {renderModule('ip-stats', <VisitorAnalytics />)}
+            {activeTab === 'ip-stats' && renderModule('ip-stats', <VisitorAnalytics />)}
 
-            {renderModule('prompts',
+            {activeTab === 'prompts' && renderModule('prompts',
               <PromptManager
                 prompts={prompts}
                 onUpdatePrompt={(prompt) => updatePrompts(prompts.map((p) => (p.id === prompt.id ? prompt : p)))}
@@ -357,7 +357,7 @@ export default function HomePage() {
               />
             )}
 
-            {renderModule('models',
+            {activeTab === 'models' && renderModule('models',
               <ModelManager
                 models={models}
                 onUpdateModel={(model) => updateModels(models.map((m) => (m.id === model.id ? model : m)))}
