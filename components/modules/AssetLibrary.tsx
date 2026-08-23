@@ -14,6 +14,10 @@ import {
   Film,
   MessageSquare,
   Sparkles,
+  Compass,
+  Clapperboard,
+  Camera,
+  Radio,
 } from 'lucide-react';
 import { useToast } from '@/components/ui/Toast';
 import { MediaAsset } from '@/types';
@@ -35,9 +39,13 @@ export function AssetLibrary({ assets, onDeleteAsset, onClearAll }: AssetLibrary
 
   const typeTabs = [
     { id: 'all', label: '全部资产' },
+    { id: 'mandala', label: '曼陀罗/IP', icon: Compass },
+    { id: 'comic', label: '漫剧/三视图', icon: Clapperboard },
+    { id: 'photo', label: '商业大片', icon: Camera },
+    { id: 'live', label: '直播剧本', icon: Radio },
     { id: 'article', label: '图文文章', icon: FileText },
     { id: 'script', label: '短视频脚本', icon: Video },
-    { id: 'image', label: '图片作品', icon: ImageIcon },
+    { id: 'image', label: 'AI 生图', icon: ImageIcon },
     { id: 'video', label: '渲染视频', icon: Film },
     { id: 'comment', label: '评论话术', icon: MessageSquare },
   ];
@@ -78,6 +86,14 @@ export function AssetLibrary({ assets, onDeleteAsset, onClearAll }: AssetLibrary
 
   const getTypeIcon = (type: MediaAsset['type']) => {
     switch (type) {
+      case 'mandala':
+        return <Compass className="w-4 h-4 text-rose-400" />;
+      case 'comic':
+        return <Clapperboard className="w-4 h-4 text-purple-400" />;
+      case 'photo':
+        return <Camera className="w-4 h-4 text-cyan-400" />;
+      case 'live':
+        return <Radio className="w-4 h-4 text-red-400" />;
       case 'article':
         return <FileText className="w-4 h-4 text-indigo-400" />;
       case 'script':
@@ -100,135 +116,153 @@ export function AssetLibrary({ assets, onDeleteAsset, onClearAll }: AssetLibrary
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
+              placeholder="搜索标题、内容或标签..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="搜索资产标题、正文关键词或标签..."
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500"
+              className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
             />
           </div>
-
-          <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-thin">
-            {typeTabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setFilterType(tab.id)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
-                  filterType === tab.id
-                    ? 'bg-teal-500/20 text-teal-300 border border-teal-500/40 shadow-sm'
-                    : 'bg-slate-950 text-slate-400 border border-slate-800 hover:text-slate-200'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+          <span className="text-xs text-slate-400 font-mono">共 {filteredAssets.length} 项资产</span>
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-400 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800">
-            共 {filteredAssets.length} 项资产
-          </span>
-          {assets.length > 0 && onClearAll && (
+        {assets.length > 0 && onClearAll && (
+          <button
+            onClick={() => {
+              if (confirm('确定要清空所有资产记录吗？此操作无法恢复。')) {
+                onClearAll();
+                showToast('资产库已清空', 'info');
+              }
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-red-500/30 text-red-400 hover:bg-red-500/10 text-xs font-medium transition-all"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>清空资产库</span>
+          </button>
+        )}
+      </div>
+
+      {/* Filter Tabs */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
+        {typeTabs.map((tab) => {
+          const Icon = tab.icon;
+          const count =
+            tab.id === 'all'
+              ? assets.length
+              : assets.filter((a) => a.type === tab.id).length;
+          return (
             <button
-              onClick={() => {
-                if (confirm('确定要清空全部资产库吗？')) onClearAll();
-              }}
-              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 text-xs font-medium transition-colors"
+              key={tab.id}
+              onClick={() => setFilterType(tab.id)}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all whitespace-nowrap cursor-pointer ${
+                filterType === tab.id
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20 font-semibold'
+                  : 'bg-slate-900 text-slate-400 hover:text-slate-200 hover:bg-slate-800/80 border border-slate-800'
+              }`}
             >
-              清空
+              {Icon && <Icon className="w-3.5 h-3.5" />}
+              <span>{tab.label}</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${filterType === tab.id ? 'bg-indigo-700 text-white' : 'bg-slate-800 text-slate-400'}`}>
+                {count}
+              </span>
             </button>
-          )}
-        </div>
+          );
+        })}
       </div>
 
       {/* Assets Grid */}
       {filteredAssets.length === 0 ? (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-16 text-center text-slate-500 space-y-3">
-          <FolderArchive className="w-12 h-12 mx-auto opacity-30 text-teal-400" />
-          <p className="text-xs">资产库空空如也，在生成图文、分镜、图片或视频后点击“存入资产库”即可在此永久保存</p>
+        <div className="h-80 flex flex-col items-center justify-center text-slate-500 border border-dashed border-slate-800 rounded-2xl p-6 text-center space-y-3">
+          <FolderArchive className="w-12 h-12 text-slate-700 stroke-[1.5]" />
+          <div className="space-y-1">
+            <h4 className="font-semibold text-sm text-slate-400">暂无符合条件的自媒体资产</h4>
+            <p className="text-xs">在创作工坊、漫剧分镜、虚拟影棚或直播中枢生成的成果可一键归档至此处</p>
+          </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredAssets.map((asset) => (
             <div
               key={asset.id}
-              className="group bg-slate-900 border border-slate-800 hover:border-teal-500/40 rounded-2xl p-5 shadow-sm hover:shadow-xl transition-all flex flex-col justify-between"
+              className="bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl p-4 shadow-lg transition-all flex flex-col justify-between space-y-3 group"
             >
-              <div>
-                <div className="flex items-center justify-between mb-3">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <div className="p-1.5 rounded-lg bg-slate-950 border border-slate-800">
-                      {getTypeIcon(asset.type)}
-                    </div>
-                    <span className="text-xs font-semibold text-slate-300 capitalize">{asset.type}</span>
+                    {getTypeIcon(asset.type)}
+                    <Badge variant="purple">{asset.type}</Badge>
                   </div>
-                  <span className="text-[10px] text-slate-500">{formatDate(asset.createdAt)}</span>
+                  <span className="text-[11px] text-slate-500 font-mono">
+                    {formatDate(asset.createdAt)}
+                  </span>
                 </div>
 
-                {asset.mediaUrl && asset.type === 'image' && (
-                  <div className="mb-3 rounded-xl overflow-hidden aspect-video bg-slate-950">
-                    <img src={asset.mediaUrl} alt={asset.title} className="w-full h-full object-cover" />
-                  </div>
-                )}
-
-                {asset.mediaUrl && asset.type === 'video' && (
-                  <div className="mb-3 rounded-xl overflow-hidden aspect-video bg-slate-950 flex items-center justify-center">
-                    <video src={asset.mediaUrl} className="w-full h-full object-cover" />
-                  </div>
-                )}
-
-                <h4 className="font-semibold text-slate-100 text-sm mb-2 line-clamp-1 group-hover:text-teal-300 transition-colors">
+                <h4 className="font-bold text-sm text-slate-100 line-clamp-1 group-hover:text-indigo-300 transition-colors">
                   {asset.title}
                 </h4>
 
-                <p className="text-xs text-slate-400 line-clamp-3 leading-relaxed mb-3">
+                {/* Media Preview Thumbnail */}
+                {asset.mediaUrl && (
+                  <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-slate-950 border border-slate-800">
+                    {asset.type === 'video' ? (
+                      <video src={asset.mediaUrl} className="w-full h-full object-cover" />
+                    ) : (
+                      <img src={asset.mediaUrl} alt={asset.title} className="w-full h-full object-cover" />
+                    )}
+                  </div>
+                )}
+
+                <p className="text-xs text-slate-400 line-clamp-3 leading-relaxed font-sans">
                   {asset.content}
                 </p>
 
                 {asset.tags && asset.tags.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 mb-3">
-                    {asset.tags.map((t, idx) => (
-                      <Badge key={idx} variant="neutral">
-                        {t}
-                      </Badge>
+                  <div className="flex flex-wrap gap-1 pt-1">
+                    {asset.tags.map((tag, tIdx) => (
+                      <span
+                        key={tIdx}
+                        className="text-[10px] px-2 py-0.5 rounded-md bg-slate-950 text-slate-400 border border-slate-800 font-mono"
+                      >
+                        #{tag}
+                      </span>
                     ))}
                   </div>
                 )}
               </div>
 
-              <div className="pt-3 border-t border-slate-800 flex items-center justify-between gap-2">
+              {/* Actions Footer */}
+              <div className="flex items-center justify-between border-t border-slate-800/80 pt-3">
                 <button
                   onClick={() => setPreviewAsset(asset)}
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-medium transition-colors"
+                  className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 font-medium cursor-pointer"
                 >
                   <Eye className="w-3.5 h-3.5" />
                   <span>查看详情</span>
                 </button>
 
-                <div className="flex gap-1.5">
+                <div className="flex items-center gap-2">
                   <button
                     onClick={() => handleCopyContent(asset)}
-                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 transition-colors"
+                    className="p-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 transition-colors"
                     title="复制内容"
                   >
                     <Copy className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={() => handleDownloadAsset(asset)}
-                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 transition-colors"
-                    title="下载文件"
+                    className="p-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 transition-colors"
+                    title="下载资产"
                   >
                     <Download className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={() => {
-                      if (confirm(`确定删除资产“${asset.title}”？`)) {
+                      if (confirm(`确定要删除资产“${asset.title}”吗？`)) {
                         onDeleteAsset(asset.id);
                         showToast('资产已删除', 'info');
                       }
                     }}
-                    className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 transition-colors"
-                    title="删除"
+                    className="p-1.5 rounded-lg bg-slate-950 hover:bg-red-500/20 text-slate-400 hover:text-red-400 border border-slate-800 transition-colors"
+                    title="删除资产"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -239,7 +273,7 @@ export function AssetLibrary({ assets, onDeleteAsset, onClearAll }: AssetLibrary
         </div>
       )}
 
-      {/* Detail Preview Modal */}
+      {/* Preview Modal */}
       {previewAsset && (
         <Modal
           isOpen={!!previewAsset}
@@ -248,39 +282,43 @@ export function AssetLibrary({ assets, onDeleteAsset, onClearAll }: AssetLibrary
           maxWidth="max-w-3xl"
         >
           <div className="space-y-4">
-            {previewAsset.mediaUrl && previewAsset.type === 'image' && (
-              <div className="rounded-xl overflow-hidden max-h-96 flex items-center justify-center bg-black/40">
-                <img src={previewAsset.mediaUrl} alt={previewAsset.title} className="max-h-96 object-contain rounded-lg" />
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Badge variant="purple">{previewAsset.type}</Badge>
+                <span className="text-xs text-slate-400 font-mono">创建时间: {previewAsset.createdAt}</span>
               </div>
-            )}
-
-            {previewAsset.mediaUrl && previewAsset.type === 'video' && (
-              <div className="rounded-xl overflow-hidden aspect-video bg-black/60">
-                <video src={previewAsset.mediaUrl} controls className="w-full h-full object-contain" />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleCopyContent(previewAsset)}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>复制内容</span>
+                </button>
+                <button
+                  onClick={() => handleDownloadAsset(previewAsset)}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>导出文件</span>
+                </button>
               </div>
-            )}
-
-            <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 overflow-y-auto max-h-[50vh]">
-              <pre className="text-xs text-slate-200 whitespace-pre-wrap font-sans leading-relaxed">
-                {previewAsset.content}
-              </pre>
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                onClick={() => handleCopyContent(previewAsset)}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium flex items-center gap-1.5"
-              >
-                <Copy className="w-3.5 h-3.5" />
-                <span>复制正文</span>
-              </button>
-              <button
-                onClick={() => handleDownloadAsset(previewAsset)}
-                className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold flex items-center gap-1.5"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>下载文件</span>
-              </button>
+            {previewAsset.mediaUrl && (
+              <div className="rounded-xl overflow-hidden bg-slate-950 border border-slate-800 aspect-video flex items-center justify-center">
+                {previewAsset.type === 'video' ? (
+                  <video src={previewAsset.mediaUrl} controls className="w-full h-full object-contain" />
+                ) : (
+                  <img src={previewAsset.mediaUrl} alt={previewAsset.title} className="w-full h-full object-contain" />
+                )}
+              </div>
+            )}
+
+            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 max-h-96 overflow-y-auto pr-2 scrollbar-thin">
+              <pre className="text-xs text-slate-200 font-mono whitespace-pre-wrap leading-relaxed">
+                {previewAsset.content}
+              </pre>
             </div>
           </div>
         </Modal>

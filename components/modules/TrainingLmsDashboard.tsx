@@ -17,14 +17,18 @@ import {
   ShieldCheck,
   HelpCircle,
   ExternalLink,
+  DownloadCloud,
+  FileText,
 } from 'lucide-react';
 import { useToast } from '@/components/ui/Toast';
-import { AIModelConfig, PromptTemplate, TrainingMission } from '@/types';
+import { AIModelConfig, PromptTemplate, TrainingMission, MediaAsset } from '@/types';
 import { Badge } from '@/components/ui/Badge';
+import { Modal } from '@/components/ui/Modal';
 
 interface TrainingLmsDashboardProps {
   models: AIModelConfig[];
   prompts: PromptTemplate[];
+  assets?: MediaAsset[];
 }
 
 const DEFAULT_MISSIONS: TrainingMission[] = [
@@ -80,6 +84,7 @@ const DEFAULT_MISSIONS: TrainingMission[] = [
 export function TrainingLmsDashboard({
   models,
   prompts,
+  assets = [],
 }: TrainingLmsDashboardProps) {
   const { showToast } = useToast();
   const textModels = models.filter((m) => m.type === 'text');
@@ -90,6 +95,9 @@ export function TrainingLmsDashboard({
   const [submissionText, setSubmissionText] = useState<string>('');
   const [evaluating, setEvaluating] = useState<boolean>(false);
   const [evaluationResult, setEvaluationResult] = useState<any>(null);
+
+  // Asset Import Modal state
+  const [showAssetSelector, setShowAssetSelector] = useState<boolean>(false);
 
   const activeMission = missions.find((m) => m.id === activeMissionId) || missions[0];
 
@@ -161,6 +169,12 @@ export function TrainingLmsDashboard({
     } finally {
       setEvaluating(false);
     }
+  };
+
+  const handleImportAsset = (asset: MediaAsset) => {
+    setSubmissionText(`【成果标题】${asset.title}\n【成果类型】${asset.type}\n【成果内容】\n${asset.content}`);
+    setShowAssetSelector(false);
+    showToast(`已成功载入资产成果：“${asset.title}”！`, 'success');
   };
 
   return (
@@ -264,13 +278,24 @@ export function TrainingLmsDashboard({
             <p className="leading-relaxed">{activeMission.taskRequirement}</p>
           </div>
 
-          {/* Submission Input */}
+          {/* Submission Input & Quick Import Bar */}
           <div className="space-y-2">
-            <label className="text-xs font-medium text-slate-300">作业内容提交 / 成果文案 / 视频链接</label>
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-medium text-slate-300">作业内容提交 / 成果文案 / 视频链接</label>
+              {assets.length > 0 && (
+                <button
+                  onClick={() => setShowAssetSelector(true)}
+                  className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 font-medium cursor-pointer"
+                >
+                  <DownloadCloud className="w-3.5 h-3.5" />
+                  <span>📥 从自媒体资产库快速导入成果</span>
+                </button>
+              )}
+            </div>
             <textarea
               value={submissionText}
               onChange={(e) => setSubmissionText(e.target.value)}
-              rows={5}
+              rows={6}
               placeholder="在此粘贴您在各个模块生成的四件套文案、漫剧分镜脚本、三视图生图指令、直播排品SOP或发布链接..."
               className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3.5 text-xs text-slate-100 font-mono leading-relaxed focus:outline-none focus:border-indigo-500"
             />
@@ -361,6 +386,46 @@ export function TrainingLmsDashboard({
           )}
         </div>
       </div>
+
+      {/* Asset Import Modal */}
+      {showAssetSelector && (
+        <Modal
+          isOpen={showAssetSelector}
+          onClose={() => setShowAssetSelector(false)}
+          title="选择要导入的自媒体成果资产"
+          maxWidth="max-w-2xl"
+        >
+          <div className="space-y-3">
+            <p className="text-xs text-slate-400">点击下方任意一项数字资产，自动将其排版内容载入到当前通关作业中：</p>
+            <div className="max-h-96 overflow-y-auto space-y-2.5 pr-1 scrollbar-thin">
+              {assets.length === 0 ? (
+                <p className="text-xs text-slate-500 text-center py-8">暂无已保存的资产</p>
+              ) : (
+                assets.map((asset) => (
+                  <div
+                    key={asset.id}
+                    onClick={() => handleImportAsset(asset)}
+                    className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-indigo-500/60 hover:bg-slate-900 cursor-pointer transition-all flex items-center justify-between group"
+                  >
+                    <div className="space-y-1 min-w-0 flex-1 pr-3">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="purple">{asset.type}</Badge>
+                        <h5 className="text-xs font-bold text-slate-200 truncate group-hover:text-indigo-300">
+                          {asset.title}
+                        </h5>
+                      </div>
+                      <p className="text-[11px] text-slate-400 line-clamp-1">{asset.content}</p>
+                    </div>
+                    <span className="text-xs text-indigo-400 font-semibold shrink-0 group-hover:underline">
+                      载入 ➔
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

@@ -180,6 +180,7 @@ export interface ComicSceneCard {
   fabeAnalysis?: string;
   imagePrompt: string;
   videoPrompt: string;
+  renderedImageUrl?: string;
 }
 
 // === 3. Commercial Photo Studio Types ===
@@ -231,3 +232,37 @@ export interface TrainingMission {
   aiFeedback?: string;
   mentorFeedback?: string;
 }
+
+// === 6. User RBAC & Roles Management Types ===
+export type UserRole = 'admin' | 'mentor' | 'enterprise' | 'student';
+
+export type PermissionKey =
+  | 'create_content'    // 实战创作工作台 (曼陀罗/漫剧/影棚/图文/生图/视频)
+  | 'live_cockpit'     // 智能直播操盘 (排品/剧本/弹幕场控)
+  | 'account_matrix'   // 全网矩阵账号与合规风控自检
+  | 'manage_assets'    // 自媒体资产库管理
+  | 'lms_submit'       // 实训作业打卡提交与 AI 初审
+  | 'lms_grade'        // 导师评审与学员作业终审
+  | 'view_analytics'   // 访客与地域数据看板
+  | 'manage_prompts'   // 提示词与人设系统配置
+  | 'manage_models'    // 大模型接口引擎与 API Key 配置
+  | 'manage_users';    // 用户角色指派与权限管理
+
+export interface UserProfile {
+  id: string;
+  username: string;
+  name: string;
+  password?: string;
+  avatar?: string;
+  role: UserRole;
+  appliedRole?: UserRole;
+  applyReason?: string;
+  organization?: string;
+  email?: string;
+  phone?: string;
+  customPermissions?: PermissionKey[];
+  status: 'active' | 'pending_approval' | 'disabled' | 'rejected';
+  createdAt: string;
+  lastLoginAt?: string;
+}
+

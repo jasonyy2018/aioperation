@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Sidebar, NavTabId } from '@/components/layout/Sidebar';
 import { Header } from '@/components/layout/Header';
+import { LoginPage } from '@/components/auth/LoginPage';
 import { HotspotDiscovery } from '@/components/modules/HotspotDiscovery';
 import { MandalaTopicPlanner } from '@/components/modules/MandalaTopicPlanner';
 import { ComicStoryboardStudio } from '@/components/modules/ComicStoryboardStudio';
@@ -20,12 +21,21 @@ import { TrainingLmsDashboard } from '@/components/modules/TrainingLmsDashboard'
 import { VisitorAnalytics } from '@/components/modules/VisitorAnalytics';
 import { PromptManager } from '@/components/modules/PromptManager';
 import { ModelManager } from '@/components/modules/ModelManager';
+import { UserManager } from '@/components/modules/UserManager';
 import { DEFAULT_PROMPTS } from '@/lib/constants/prompts';
 import { DEFAULT_MODELS } from '@/lib/constants/models';
-import { AIModelConfig, PromptTemplate, SocialAccount, MediaAsset } from '@/types';
+import { DEFAULT_USERS, hasPermission } from '@/lib/constants/users';
+import {
+  AIModelConfig,
+  PromptTemplate,
+  SocialAccount,
+  MediaAsset,
+  UserProfile,
+} from '@/types';
 import { safeJsonParse } from '@/lib/utils';
 
 export default function HomePage() {
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<NavTabId>('mandala');
 
   // Persistent States
@@ -33,6 +43,8 @@ export default function HomePage() {
   const [prompts, setPrompts] = useState<PromptTemplate[]>(DEFAULT_PROMPTS);
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
   const [assets, setAssets] = useState<MediaAsset[]>([]);
+  const [users, setUsers] = useState<UserProfile[]>(DEFAULT_USERS);
+  const [currentUser, setCurrentUser] = useState<UserProfile>(DEFAULT_USERS[0]);
 
   // Cross-module prefill states
   const [articlePrefill, setArticlePrefill] = useState<{ topic: string; summary: string }>({
@@ -50,6 +62,10 @@ export default function HomePage() {
   useEffect(() => {
     try {
       if (typeof window !== 'undefined') {
+        const savedAuth = localStorage.getItem('automedia_is_logged_in');
+        if (savedAuth !== null) {
+          setIsLoggedIn(savedAuth === 'true');
+        }
         const savedModels = localStorage.getItem('automedia_models');
         if (savedModels) {
           setModels(safeJsonParse(savedModels, DEFAULT_MODELS));
@@ -65,6 +81,14 @@ export default function HomePage() {
         const savedAssets = localStorage.getItem('automedia_assets');
         if (savedAssets) {
           setAssets(safeJsonParse(savedAssets, []));
+        }
+        const savedUsers = localStorage.getItem('automedia_users');
+        if (savedUsers) {
+          setUsers(safeJsonParse(savedUsers, DEFAULT_USERS));
+        }
+        const savedCurrentUser = localStorage.getItem('automedia_current_user');
+        if (savedCurrentUser) {
+          setCurrentUser(safeJsonParse(savedCurrentUser, DEFAULT_USERS[0]));
         }
       }
     } catch (e) {
@@ -101,6 +125,41 @@ export default function HomePage() {
     }
   };
 
+  const updateUsers = (newUsers: UserProfile[]) => {
+    setUsers(newUsers);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('automedia_users', JSON.stringify(newUsers));
+    }
+  };
+
+  const handleLogin = (user: UserProfile) => {
+    setCurrentUser(user);
+    setIsLoggedIn(true);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('automedia_current_user', JSON.stringify(user));
+      localStorage.setItem('automedia_is_logged_in', 'true');
+    }
+  };
+
+  const handleRegisterSubmit = (user: UserProfile) => {
+    const updatedUsers = [...users, user];
+    updateUsers(updatedUsers);
+  };
+
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('automedia_is_logged_in', 'false');
+    }
+  };
+
+  const handleSwitchUser = (user: UserProfile) => {
+    setCurrentUser(user);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('automedia_current_user', JSON.stringify(user));
+    }
+  };
+
   // Cross-module Handlers
   const handleQuickArticle = (title: string, summary: string) => {
     setArticlePrefill({ topic: title, summary });
@@ -127,9 +186,25 @@ export default function HomePage() {
     updateAssets(updated);
   };
 
+  // If not logged in, render the login & registration page
+  if (!isLoggedIn) {
+    return (
+      <LoginPage
+        onLogin={handleLogin}
+        onRegisterSubmit={handleRegisterSubmit}
+        registeredUsers={users}
+      />
+    );
+  }
+
   // Tab Header Details
   const getTabHeader = () => {
     switch (activeTab) {
+      case 'users':
+        return {
+          title: '👥 用户与角色权限管理中枢',
+          subtitle: '超级管理员、实训导师、老字号企业与学员 RBAC 角色指派与权限边界管控',
+        };
       case 'mandala':
         return {
           title: '🎯 曼陀罗九宫格选题与 IP 策划中枢',
@@ -138,7 +213,7 @@ export default function HomePage() {
       case 'comic':
         return {
           title: '🎬 AI 漫剧导演与三视图一致性工作台',
-          subtitle: '角色/商品三视图特征锁定 · 4 阶段无限卡片流分镜 · FABE 带货与图生视频运镜',
+          subtitle: '角色/商品三视图特征锁定 · 4 阶段无限卡片流分镜 · 原地生图与图生视频运镜',
         };
       case 'photo':
         return {
@@ -153,7 +228,7 @@ export default function HomePage() {
       case 'training':
         return {
           title: '🏆 18 课时阶梯式实战通关与孵化看板',
-          subtitle: '黄浦区就业促进中心 & 星光老字号公共实训基地认证 · AI 多维智能初审与政策对接',
+          subtitle: '黄浦区就业促进中心 & 星光老字号公共实训基地认证 · 资产一键导入 · AI 多维初审与导师评审',
         };
       case 'hotspot':
         return {
@@ -193,12 +268,12 @@ export default function HomePage() {
       case 'accounts':
         return {
           title: '👥 自媒体全网矩阵账号管理',
-          subtitle: '抖音 / 视频号 / 快手 / 小红书 / B站 账号健康度与资产看板',
+          subtitle: '抖音 / 视频号 / 快手 / 小红书 矩阵管理与广告法违规词自检排查仪',
         };
       case 'assets':
         return {
           title: '📂 自媒体数字资产库',
-          subtitle: '图文、脚本、漫剧、三视图、影棚大片与直播剧本统一归档检索',
+          subtitle: '图文、脚本、漫剧、三视图、影棚大片与直播剧本全模态归档检索',
         };
       case 'ip-stats':
         return {
@@ -228,15 +303,34 @@ export default function HomePage() {
         onTabChange={setActiveTab}
         accountCount={accounts.length}
         assetCount={assets.length}
+        currentUser={currentUser}
       />
 
       {/* Main Workspace */}
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-        <Header title={headerInfo.title} subtitle={headerInfo.subtitle} />
+        <Header
+          title={headerInfo.title}
+          subtitle={headerInfo.subtitle}
+          currentUser={currentUser}
+          onLogout={handleLogout}
+          onOpenUsers={() => setActiveTab('users')}
+        />
 
         <main className="flex-1 overflow-y-auto p-8 scrollbar-thin">
           <div className="max-w-7xl mx-auto pb-12">
-            {/* 1. New Core Engines */}
+            {/* RBAC User Manager */}
+            {activeTab === 'users' && (
+              <UserManager
+                users={users}
+                currentUser={currentUser}
+                onAddUser={(u) => updateUsers([...users, u])}
+                onUpdateUser={(u) => updateUsers(users.map((item) => (item.id === u.id ? u : item)))}
+                onDeleteUser={(id) => updateUsers(users.filter((item) => item.id !== id))}
+                onSwitchUser={handleSwitchUser}
+              />
+            )}
+
+            {/* 1. Core Engines */}
             {activeTab === 'mandala' && (
               <MandalaTopicPlanner
                 models={models}
@@ -274,7 +368,7 @@ export default function HomePage() {
             )}
 
             {activeTab === 'training' && (
-              <TrainingLmsDashboard models={models} prompts={prompts} />
+              <TrainingLmsDashboard models={models} prompts={prompts} assets={assets} />
             )}
 
             {/* 2. Original Creation & Operations Modules */}
@@ -329,6 +423,8 @@ export default function HomePage() {
                   updateAccounts(accounts.map((a) => (a.id === acc.id ? acc : a)))
                 }
                 onDeleteAccount={(id) => updateAccounts(accounts.filter((a) => a.id !== id))}
+                models={models}
+                prompts={prompts}
               />
             )}
 

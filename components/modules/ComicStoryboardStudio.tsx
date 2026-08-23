@@ -5,17 +5,17 @@ import {
   Clapperboard,
   Sparkles,
   Layers,
-  Video,
   Copy,
   Check,
   FolderPlus,
   ArrowRight,
-  RefreshCw,
-  Eye,
+  Download,
+  Video,
   Film,
   Camera,
   Play,
   Share2,
+  ImageIcon,
 } from 'lucide-react';
 import { useToast } from '@/components/ui/Toast';
 import {
@@ -56,6 +56,7 @@ export function ComicStoryboardStudio({
   const [loadingCards, setLoadingCards] = useState<boolean>(false);
   const [cards, setCards] = useState<ComicSceneCard[]>([]);
   const [activeCardIdx, setActiveCardIdx] = useState<number>(0);
+  const [renderingCardIdx, setRenderingCardIdx] = useState<number | null>(null);
 
   // Three Views state
   const [charName, setCharName] = useState<string>('苏黎（青年老字号传人）');
@@ -63,6 +64,7 @@ export function ComicStoryboardStudio({
   const [charFeatures, setCharFeatures] = useState<string>('深蓝色中式改良唐装，短发干净利落，胸前挂着微型单反相机');
   const [loadingThreeViews, setLoadingThreeViews] = useState<boolean>(false);
   const [threeViewsData, setThreeViewsData] = useState<ThreeViewsAsset | null>(null);
+  const [renderingThreeViews, setRenderingThreeViews] = useState<boolean>(false);
 
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
@@ -82,13 +84,13 @@ export function ComicStoryboardStudio({
   // Handle Comic Storyboard Generation
   const handleGenerateCards = async () => {
     if (!theme.trim()) {
-      showToast('请输入漫剧剧情主题', 'warning');
+      showToast('请输入剧情主题', 'warning');
       return;
     }
     setLoadingCards(true);
     try {
       const promptContent = prompts.find((p) => p.id === 'comic-storyboard')?.content || '';
-      const userPrompt = `漫剧带货剧本主题：【${theme}】。\n产品核心卖点/FABE信息：【${productSellingPoint}】。\n请按4张标准卡片（前3秒钩子/痛点展开/FABE卖点/行动转化）设计分镜与运镜Prompt。`;
+      const userPrompt = `漫剧主题：【${theme}】。\n带货卖点 (FABE)：【${productSellingPoint}】。\n请输出 4 幕标准分镜（前3秒黄金钩子、痛点剧情展开、FABE卖点突围、行动号召转化）。`;
 
       const res = await fetch('/api/ai/text', {
         method: 'POST',
@@ -102,7 +104,7 @@ export function ComicStoryboardStudio({
       });
 
       const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || '生成分镜失败');
+      if (!res.ok || data.error) throw new Error(data.error || '生成漫剧分镜失败');
 
       let text = data.text.trim();
       if (text.startsWith('```json')) text = text.slice(7);
@@ -112,11 +114,46 @@ export function ComicStoryboardStudio({
       const parsed: ComicSceneCard[] = JSON.parse(text.trim());
       setCards(parsed);
       setActiveCardIdx(0);
-      showToast('已成功生成 4 阶段 AI 漫剧导演卡片流！', 'success');
+      showToast('AI 漫剧 4 阶段分镜卡片流已生成！', 'success');
     } catch (err: any) {
-      showToast(err.message || '解析分镜卡片异常', 'error');
+      showToast(err.message || '生成漫剧分镜异常', 'error');
     } finally {
       setLoadingCards(false);
+    }
+  };
+
+  // Inline render card image
+  const handleRenderCardImage = async (cardIdx: number) => {
+    const targetCard = cards[cardIdx];
+    if (!targetCard || !targetCard.imagePrompt) return;
+    setRenderingCardIdx(cardIdx);
+    try {
+      const res = await fetch('/api/ai/image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          modelId: selectedImageModel,
+          prompt: `${targetCard.imagePrompt}, masterpiece, highly detailed 8k cinematic shot`,
+          aspectRatio: '16:9',
+          count: 1,
+          customModels: models,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || '生图失败');
+      if (data.images && data.images.length > 0) {
+        const updated = [...cards];
+        updated[cardIdx] = {
+          ...updated[cardIdx],
+          renderedImageUrl: data.images[0],
+        };
+        setCards(updated);
+        showToast(`第 ${cardIdx + 1} 幕分镜画面已原地渲染成功！`, 'success');
+      }
+    } catch (err: any) {
+      showToast(err.message || '渲染分镜画面失败', 'error');
+    } finally {
+      setRenderingCardIdx(null);
     }
   };
 
@@ -160,6 +197,35 @@ export function ComicStoryboardStudio({
     }
   };
 
+  // Render Three Views Image
+  const handleRenderThreeViewImage = async () => {
+    if (!threeViewsData || !threeViewsData.frontPrompt) return;
+    setRenderingThreeViews(true);
+    try {
+      const res = await fetch('/api/ai/image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          modelId: selectedImageModel,
+          prompt: `Character Model Sheet, 3-views orthographic turnaround (front view, side view, back view) of ${threeViewsData.characterName}, ${threeViewsData.style}, ${threeViewsData.frontPrompt}, pure white background, consistent character design, 8k resolution`,
+          aspectRatio: '16:9',
+          count: 1,
+          customModels: models,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || '三视图生图失败');
+      if (data.images && data.images.length > 0) {
+        setThreeViewsData((prev) => (prev ? { ...prev, imageUrl: data.images[0] } : null));
+        showToast('三视图标准资产图已生成！', 'success');
+      }
+    } catch (err: any) {
+      showToast(err.message || '三视图生图异常', 'error');
+    } finally {
+      setRenderingThreeViews(false);
+    }
+  };
+
   const copyText = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
     setCopiedKey(key);
@@ -198,13 +264,27 @@ export function ComicStoryboardStudio({
 
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-400">剧本文案模型:</span>
+            <span className="text-xs text-slate-400">文案模型:</span>
             <select
               value={selectedTextModel}
               onChange={(e) => setSelectedTextModel(e.target.value)}
-              className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-purple-500"
+              className="bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-purple-500"
             >
               {textModels.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400">渲染生图模型:</span>
+            <select
+              value={selectedImageModel}
+              onChange={(e) => setSelectedImageModel(e.target.value)}
+              className="bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
+            >
+              {imageModels.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.name}
                 </option>
@@ -252,75 +332,28 @@ export function ComicStoryboardStudio({
               className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-lg shadow-purple-600/20 disabled:opacity-50 transition-all cursor-pointer"
             >
               <Sparkles className={`w-4 h-4 ${loadingCards ? 'animate-spin' : ''}`} />
-              <span>{loadingCards ? '导演正在推演 4 幕分镜...' : '一键生成 4 幕导演卡片流'}</span>
+              <span>{loadingCards ? 'AI 导演正在编排 4 幕分镜...' : '一键生成 AI 漫剧 4 幕分镜卡片流'}</span>
             </button>
-
-            {/* Quick Presets */}
-            <div className="space-y-1.5 pt-2 border-t border-slate-800">
-              <span className="text-[11px] text-slate-500 font-semibold">快速剧情模板:</span>
-              <div className="space-y-1">
-                {[
-                  '老字号老师傅退休，关门前最后一批限量糕点被疯抢',
-                  '摄影小白在星光器材城淘到神仙古董镜头，拍出千万播放大片',
-                  '传统实体店老板娘亲自下场爆改门店，单日营业额翻十倍',
-                ].map((preset, pIdx) => (
-                  <button
-                    key={pIdx}
-                    onClick={() => setTheme(preset)}
-                    className="w-full text-left p-2 rounded-lg bg-slate-950/60 hover:bg-slate-950 border border-slate-800 text-[11px] text-slate-400 hover:text-slate-200 transition-colors truncate"
-                  >
-                    • {preset}
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
 
-          {/* Right Cards Showcase */}
-          <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-sm text-slate-100 flex items-center gap-2">
-                <Layers className="w-4 h-4 text-purple-400" />
-                <span>漫剧导演卡片流 {cards.length > 0 && `(4 幕分镜全流程)`}</span>
-              </h3>
-
-              {cards.length > 0 && (
-                <button
-                  onClick={() => {
-                    onSaveAsset?.({
-                      id: `comic_${Date.now()}`,
-                      title: `AI漫剧分镜 - ${theme.slice(0, 16)}`,
-                      type: 'comic',
-                      content: JSON.stringify(cards, null, 2),
-                      tags: ['AI漫剧', 'FABE带货', '分镜脚本'],
-                      createdAt: new Date().toLocaleString(),
-                    });
-                    showToast('已保存至资产库！', 'success');
-                  }}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700"
-                >
-                  <FolderPlus className="w-3.5 h-3.5" />
-                  <span>保存至资产库</span>
-                </button>
-              )}
-            </div>
-
+          {/* Right Card Stream & Deep Dive */}
+          <div className="lg:col-span-2 space-y-4">
             {cards.length === 0 ? (
               <div className="h-80 flex flex-col items-center justify-center text-slate-500 border border-dashed border-slate-800 rounded-2xl p-6 text-center space-y-3">
                 <Clapperboard className="w-12 h-12 text-slate-700 stroke-[1.5]" />
-                <p className="text-xs">点击左侧生成，AI 导演将为您编排具备强吸睛与高转化卖点的 4 幕分镜卡片</p>
+                <p className="text-xs">填写左侧剧情主题并点击生成，体验 4 阶段黄金漫剧分镜卡片流与原地生图渲染</p>
               </div>
             ) : (
-              <div className="space-y-4 max-h-[560px] overflow-y-auto pr-1 scrollbar-thin">
-                {/* 4 Cards Grid Tabs */}
-                <div className="grid grid-cols-4 gap-2">
+              <div className="space-y-4">
+                {/* 4 Cards Navigation Row */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                   {cards.map((card, cIdx) => (
                     <button
                       key={cIdx}
                       onClick={() => setActiveCardIdx(cIdx)}
                       className={`p-2.5 rounded-xl border text-left transition-all ${
                         activeCardIdx === cIdx
-                          ? 'bg-purple-500/20 border-purple-500/60 text-purple-200'
+                          ? 'bg-purple-500/20 border-purple-500/60 text-purple-200 shadow-md'
                           : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
                       }`}
                     >
@@ -342,16 +375,49 @@ export function ComicStoryboardStudio({
                           </span>
                         )}
                       </div>
-                      {onSendToVideoStudio && (
+
+                      <div className="flex items-center gap-2">
                         <button
-                          onClick={() => onSendToVideoStudio(cards[activeCardIdx].videoPrompt)}
-                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 text-white text-xs font-semibold shadow-sm"
+                          onClick={() => handleRenderCardImage(activeCardIdx)}
+                          disabled={renderingCardIdx === activeCardIdx}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 text-white text-xs font-semibold shadow-sm cursor-pointer disabled:opacity-50"
                         >
-                          <Video className="w-3.5 h-3.5" />
-                          <span>发送至 AI 视频渲染</span>
+                          <ImageIcon className={`w-3.5 h-3.5 ${renderingCardIdx === activeCardIdx ? 'animate-spin' : ''}`} />
+                          <span>{renderingCardIdx === activeCardIdx ? '正在渲染画作...' : '🎨 原地生图渲染'}</span>
                         </button>
-                      )}
+                        {onSendToVideoStudio && (
+                          <button
+                            onClick={() => onSendToVideoStudio(cards[activeCardIdx].videoPrompt)}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 text-white text-xs font-semibold shadow-sm cursor-pointer"
+                          >
+                            <Video className="w-3.5 h-3.5" />
+                            <span>发送至视频渲染</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
+
+                    {/* Rendered Image Preview Box if available */}
+                    {cards[activeCardIdx].renderedImageUrl && (
+                      <div className="rounded-xl overflow-hidden border border-slate-800 relative bg-slate-900 aspect-video flex items-center justify-center">
+                        <img
+                          src={cards[activeCardIdx].renderedImageUrl}
+                          alt={`第 ${activeCardIdx + 1} 幕分镜画面`}
+                          className="w-full h-full object-cover"
+                        />
+                        <div className="absolute bottom-2 right-2 flex gap-1.5 bg-slate-950/80 p-1 rounded-lg backdrop-blur-sm">
+                          <a
+                            href={cards[activeCardIdx].renderedImageUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            download={`storyboard_scene_${activeCardIdx + 1}.png`}
+                            className="p-1 text-slate-300 hover:text-white"
+                          >
+                            <Download className="w-4 h-4" />
+                          </a>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {/* Visual & Dialogue */}
@@ -411,6 +477,27 @@ export function ComicStoryboardStudio({
                         </div>
                       </div>
                     </div>
+
+                    <div className="flex justify-end pt-2">
+                      <button
+                        onClick={() => {
+                          onSaveAsset?.({
+                            id: `comic_${Date.now()}`,
+                            title: `漫剧分镜 - ${theme.slice(0, 20)}`,
+                            type: 'comic',
+                            content: JSON.stringify(cards, null, 2),
+                            mediaUrl: cards[activeCardIdx].renderedImageUrl,
+                            tags: ['AI漫剧', '分镜卡片流', 'FABE带货'],
+                            createdAt: new Date().toLocaleString(),
+                          });
+                          showToast('全套漫剧分镜卡片已保存至数字资产库！', 'success');
+                        }}
+                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 cursor-pointer"
+                      >
+                        <FolderPlus className="w-3.5 h-3.5" />
+                        <span>归档全套分镜至资产库</span>
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -448,18 +535,18 @@ export function ComicStoryboardStudio({
               >
                 <option value="3D国潮皮克斯质感 + 真实电影级打光">3D国潮皮克斯质感 (极高辨识度)</option>
                 <option value="写实商业广告摄影 + 8k超精细细节">写实商业广告摄影 (真实可信度高)</option>
-                <option value="日系治愈微动漫 + 柔和光斑">日系治愈微动漫 (小红书/生活方式)</option>
-                <option value="赛博朋克国潮 + 霓虹体积光">赛博朋克国潮 (年轻人/科技吸睛)</option>
+                <option value="赛博朋克霓虹光影 + 高反光材质">赛博朋克现代视觉 (年轻潮流)</option>
+                <option value="水墨新中式概念设计 + 宣纸肌理">水墨新中式 (文化底蕴高)</option>
               </select>
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-medium text-slate-300">核心锁定特征 (发型/服饰/LOGO)</label>
+              <label className="text-xs font-medium text-slate-300">锁定核心视觉特征 (跨镜头一致性)</label>
               <textarea
                 value={charFeatures}
                 onChange={(e) => setCharFeatures(e.target.value)}
                 rows={3}
-                placeholder="例如：深蓝色中式立领唐装，胸口金色刺绣LOGO，银边眼镜"
+                placeholder="发型、服装颜色材质、标志性挂饰或商品包装特有纹理..."
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-slate-100 focus:outline-none focus:border-cyan-500"
               />
             </div>
@@ -470,116 +557,101 @@ export function ComicStoryboardStudio({
               className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-semibold shadow-lg shadow-cyan-600/20 disabled:opacity-50 transition-all cursor-pointer"
             >
               <Sparkles className={`w-4 h-4 ${loadingThreeViews ? 'animate-spin' : ''}`} />
-              <span>{loadingThreeViews ? '正在计算三视图指令...' : '生成三视图一致性视觉指令'}</span>
+              <span>{loadingThreeViews ? '正在生成三视图指令...' : '一键生成标准化三视图生成指令'}</span>
             </button>
           </div>
 
           {/* Three Views Result */}
-          <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-sm text-slate-100 flex items-center gap-2">
-                <Camera className="w-4 h-4 text-cyan-400" />
-                <span>三视图（正面 / 侧面 / 背面）特征锁定库</span>
-              </h3>
-
-              {threeViewsData && (
-                <button
-                  onClick={() => {
-                    onSaveAsset?.({
-                      id: `threeviews_${Date.now()}`,
-                      title: `三视图资产 - ${threeViewsData.characterName}`,
-                      type: 'comic',
-                      content: JSON.stringify(threeViewsData, null, 2),
-                      tags: ['三视图', '一致性', threeViewsData.characterName],
-                      createdAt: new Date().toLocaleString(),
-                    });
-                    showToast('三视图资产已保存！', 'success');
-                  }}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700"
-                >
-                  <FolderPlus className="w-3.5 h-3.5" />
-                  <span>保存至资产库</span>
-                </button>
-              )}
-            </div>
-
+          <div className="lg:col-span-2 space-y-4">
             {!threeViewsData ? (
               <div className="h-80 flex flex-col items-center justify-center text-slate-500 border border-dashed border-slate-800 rounded-2xl p-6 text-center space-y-3">
                 <Camera className="w-12 h-12 text-slate-700 stroke-[1.5]" />
-                <p className="text-xs">点击左侧生成，AI 将输出正面、侧面、背面标准化一致性生图指令与 Seed 锁定码</p>
+                <p className="text-xs">定义角色特征后生成【正面、侧面、背面】三视图一致性生图 Prompt 与 Seed 锁定码</p>
               </div>
             ) : (
-              <div className="space-y-4 max-h-[560px] overflow-y-auto pr-1 scrollbar-thin">
-                {/* 3 Prompts Columns */}
+              <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="cyan">三视图一致性资产</Badge>
+                    <span className="font-bold text-sm text-slate-100">{threeViewsData.characterName}</span>
+                  </div>
+
+                  <button
+                    onClick={handleRenderThreeViewImage}
+                    disabled={renderingThreeViews}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 text-white text-xs font-semibold shadow-sm cursor-pointer disabled:opacity-50"
+                  >
+                    <ImageIcon className={`w-3.5 h-3.5 ${renderingThreeViews ? 'animate-spin' : ''}`} />
+                    <span>{renderingThreeViews ? '正在渲染三视图...' : '🎨 一键渲染三视图标准大图'}</span>
+                  </button>
+                </div>
+
+                {threeViewsData.imageUrl && (
+                  <div className="rounded-xl overflow-hidden border border-slate-800 relative bg-slate-950 aspect-video flex items-center justify-center">
+                    <img
+                      src={threeViewsData.imageUrl}
+                      alt={threeViewsData.characterName}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                  <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-cyan-300">① 正面视图 (Front)</span>
-                      <button
-                        onClick={() => copyText(threeViewsData.frontPrompt, 'front')}
-                        className="p-1 text-slate-400 hover:text-white"
-                      >
+                      <span className="text-xs font-bold text-cyan-300">1. 正面视角 (Front)</span>
+                      <button onClick={() => copyText(threeViewsData.frontPrompt, 'front')} className="text-slate-400 hover:text-white">
                         {copiedKey === 'front' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                       </button>
                     </div>
-                    <p className="text-[11px] font-mono text-slate-300 leading-relaxed bg-slate-900/60 p-2.5 rounded-lg border border-slate-800/80">
-                      {threeViewsData.frontPrompt}
-                    </p>
+                    <p className="text-[11px] font-mono text-slate-300 leading-relaxed line-clamp-4">{threeViewsData.frontPrompt}</p>
                   </div>
 
-                  <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                  <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-indigo-300">② 侧面视图 (Side)</span>
-                      <button
-                        onClick={() => copyText(threeViewsData.sidePrompt, 'side')}
-                        className="p-1 text-slate-400 hover:text-white"
-                      >
+                      <span className="text-xs font-bold text-cyan-300">2. 侧面视角 (Side)</span>
+                      <button onClick={() => copyText(threeViewsData.sidePrompt, 'side')} className="text-slate-400 hover:text-white">
                         {copiedKey === 'side' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                       </button>
                     </div>
-                    <p className="text-[11px] font-mono text-slate-300 leading-relaxed bg-slate-900/60 p-2.5 rounded-lg border border-slate-800/80">
-                      {threeViewsData.sidePrompt}
-                    </p>
+                    <p className="text-[11px] font-mono text-slate-300 leading-relaxed line-clamp-4">{threeViewsData.sidePrompt}</p>
                   </div>
 
-                  <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                  <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-purple-300">③ 背面视图 (Back)</span>
-                      <button
-                        onClick={() => copyText(threeViewsData.backPrompt, 'back')}
-                        className="p-1 text-slate-400 hover:text-white"
-                      >
+                      <span className="text-xs font-bold text-cyan-300">3. 背面视角 (Back)</span>
+                      <button onClick={() => copyText(threeViewsData.backPrompt, 'back')} className="text-slate-400 hover:text-white">
                         {copiedKey === 'back' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                       </button>
                     </div>
-                    <p className="text-[11px] font-mono text-slate-300 leading-relaxed bg-slate-900/60 p-2.5 rounded-lg border border-slate-800/80">
-                      {threeViewsData.backPrompt}
-                    </p>
+                    <p className="text-[11px] font-mono text-slate-300 leading-relaxed line-clamp-4">{threeViewsData.backPrompt}</p>
                   </div>
                 </div>
 
-                {/* Consistency Lock Code */}
-                {threeViewsData.seedCode && (
-                  <div className="p-4 rounded-xl bg-slate-950 border border-indigo-500/30 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-indigo-400">
-                        🔑 跨分镜角色/商品特征锁定关键词 (Consistency Token)
-                      </span>
-                      <button
-                        onClick={() => copyText(threeViewsData.seedCode || '', 'seed')}
-                        className="p-1 text-slate-400 hover:text-white"
-                      >
-                        {copiedKey === 'seed' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                      </button>
-                    </div>
-                    <p className="text-xs font-mono text-slate-200 bg-slate-900/80 p-3 rounded-lg border border-slate-800/80">
-                      {threeViewsData.seedCode}
-                    </p>
-                    <p className="text-[11px] text-slate-400">
-                      在后续生成分镜图时，请将该特征段落加入 Prompt 前缀中，可大幅提高多镜头画面人物的一致性。
-                    </p>
+                <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex items-center justify-between text-xs">
+                  <div>
+                    <span className="text-slate-400 font-medium">Seed / 特征锁定描述片段: </span>
+                    <span className="font-mono text-indigo-300">{threeViewsData.seedCode || 'consistent face, exact costume pattern'}</span>
                   </div>
-                )}
+                  <button
+                    onClick={() => {
+                      onSaveAsset?.({
+                        id: `threeviews_${Date.now()}`,
+                        title: `三视图资产 - ${threeViewsData.characterName}`,
+                        type: 'comic',
+                        content: JSON.stringify(threeViewsData, null, 2),
+                        mediaUrl: threeViewsData.imageUrl,
+                        tags: ['三视图', '一致性', threeViewsData.characterName],
+                        createdAt: new Date().toLocaleString(),
+                      });
+                      showToast('三视图资产已保存！', 'success');
+                    }}
+                    className="flex items-center gap-1 text-slate-300 hover:text-white font-medium cursor-pointer"
+                  >
+                    <FolderPlus className="w-3.5 h-3.5" />
+                    <span>保存资产</span>
+                  </button>
+                </div>
               </div>
             )}
           </div>
