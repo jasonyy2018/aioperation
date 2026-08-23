@@ -77,7 +77,7 @@ export default function HomePage() {
   const [comicPrefill, setComicPrefill] = useState<string>('');
   const [videoStudioPrefill, setVideoStudioPrefill] = useState<string>('');
 
-  // Sync auth user
+  // Sync auth user - keep in sync when auth state changes
   useEffect(() => {
     if (authUser) setCurrentUser(authUser);
   }, [authUser]);
@@ -176,9 +176,8 @@ export default function HomePage() {
     return (
       <LoginPage
         onLoginSuccess={() => {
-          const updatedUsers = getUsers();
-          const loggedUser = updatedUsers.find((u) => u.username === currentUser?.username);
-          if (loggedUser) setCurrentUser(loggedUser);
+          // No need to manually sync - authUser is synced via useEffect above
+          // The component will re-render automatically when auth state changes
         }}
       />
     );
