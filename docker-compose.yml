@@ -1,0 +1,18 @@
+services:
+  automedia-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: automedia_ai_platform
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    environment:
+      - NODE_ENV=production
+      - PORT=8765
+      - HOSTNAME=0.0.0.0
+      - MM_API_KEY=${MM_API_KEY}
+      - HY_API_KEY=${HY_API_KEY}
+      - AGNES_API_KEY=${AGNES_API_KEY}
+      - ARK_API_KEY=${ARK_API_KEY}
+      - SEEDANCE_MINI_API_KEY=${SEEDANCE_MINI_API_KEY}
