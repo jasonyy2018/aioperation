@@ -11,10 +11,10 @@ services:
     ports:
       - "8765:8765"
     volumes:
-      # 持久化 SQLite 数据库（用户/会话/资产数据），容器重建不丢失
-      # ⚠️ 绑定挂载的宿主机目录属主必须是 uid 1001，否则容器内无法写入：
-      #    sudo chown -R 1001:1001 ./data
-      - ./data:/app/data
+      # 持久化 SQLite 数据库（用户/会话/资产数据）
+      # 使用命名卷: 首次挂载时自动继承镜像内 /app/data 的属主 (uid 1001)，
+      # 无需在宿主机手动 chown，杜绝 SQLITE_CANTOPEN 权限问题
+      - automedia-data:/app/data
     environment:
       - NODE_ENV=production
       - PORT=8765
@@ -44,3 +44,6 @@ services:
 networks:
   automedia-net:
     driver: bridge
+
+volumes:
+  automedia-data:
