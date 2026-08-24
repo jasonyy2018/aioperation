@@ -18,6 +18,7 @@ import {
 import { useToast } from '@/components/ui/Toast';
 import { MediaAsset, AIModelConfig, PromptTemplate } from '@/types';
 import { AIModelSelector } from '@/components/ui/AIModelSelector';
+import { useStreamingText } from '@/hooks/useStreamingText';
 import { safeJsonParse } from '@/lib/utils';
 
 interface ArticleGeneratorProps {
@@ -50,10 +51,11 @@ export function ArticleGenerator({
 
   const [content, setContent] = useState<string>('');
   const [generatedImages, setGeneratedImages] = useState<{ id: string; url: string; prompt: string; label: string }[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
   const [generatingImages, setGeneratingImages] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
   const [previewMode, setPreviewMode] = useState<'rendered' | 'source'>('rendered');
+  const { streamText, stopStream, isStreaming } = useStreamingText();
+  const loading = isStreaming;
 
   // Restore Draft from LocalStorage on mount
   useEffect(() => {
@@ -172,7 +174,7 @@ export function ArticleGenerator({
       return;
     }
 
-    setLoading(true);
+    setContent('');
     try {
       const currentPlat = platformConfigs.find((p) => p.id === platform);
       const matchedPrompt = prompts.find((p) => p.id === currentPlat?.promptId)?.content || '';
@@ -180,33 +182,29 @@ export function ArticleGenerator({
       const systemPrompt = `${matchedPrompt}\n\n当前风格语调要求：${tone}。\n目标字数控制在：${wordTarget}字左右。\n请直接输出排版优美、包含吸睛主副标题、引言、多级论述及行动号召的完整自媒体文案。`;
       const userPrompt = `【主题】：${topic}\n${outline ? `【核心要点/背景】：${outline}` : ''}`;
 
-      const res = await fetch('/api/ai/text', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          modelId: selectedTextModel,
-          systemPrompt,
-          userPrompt,
-          customModels: models,
-        }),
+      // Streaming generation — typewriter rendering via onDelta
+      const fullText = await streamText({
+        modelId: selectedTextModel,
+        systemPrompt,
+        userPrompt,
+        customModels: models,
+        onDelta: (full) => setContent(full),
       });
 
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        throw new Error(data.error || '生成失败');
+      if (!fullText.trim()) {
+        throw new Error('模型未返回有效内容');
       }
 
-      setContent(data.text);
       showToast('文章正文生成成功！', 'success');
 
       // Trigger automatic illustration generation if checked
       if (autoGenerateImages) {
-        generateMatchingIllustrations(topic, data.text);
+        generateMatchingIllustrations(topic, fullText);
       }
     } catch (err: any) {
-      showToast(err.message || '生成失败，请检查模型配置', 'error');
-    } finally {
-      setLoading(false);
+      if (err.message !== 'AbortError') {
+        showToast(err.message || '生成失败，请检查模型配置', 'error');
+      }
     }
   };
 
@@ -381,23 +379,24 @@ export function ArticleGenerator({
         </div>
 
         {/* Submit Button */}
-        <button
-          onClick={handleGenerate}
-          disabled={loading || !topic.trim()}
-          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 text-white text-xs font-semibold shadow-lg shadow-indigo-600/20 disabled:opacity-50 transition-all cursor-pointer"
-        >
-          {loading ? (
-            <>
-              <RefreshCw className="w-4 h-4 animate-spin" />
-              <span>双链路智能创作中 (文字 + 配套插图)...</span>
-            </>
-          ) : (
-            <>
-              <Zap className="w-4 h-4 fill-white" />
-              <span>一键智能生成爆款图文文章</span>
-            </>
-          )}
-        </button>
+        {isStreaming ? (
+          <button
+            onClick={stopStream}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 text-white text-xs font-semibold shadow-lg shadow-rose-600/20 transition-all cursor-pointer"
+          >
+            <RefreshCw className="w-4 h-4 animate-spin" />
+            <span>正在流式输出中 · 点击停止</span>
+          </button>
+        ) : (
+          <button
+            onClick={handleGenerate}
+            disabled={!topic.trim()}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 text-white text-xs font-semibold shadow-lg shadow-indigo-600/20 disabled:opacity-50 transition-all cursor-pointer"
+          >
+            <Zap className="w-4 h-4 fill-white" />
+            <span>一键智能生成爆款图文文章 (流式)</span>
+          </button>
+        )}
       </div>
 
       {/* Right Output & Illustration Area */}
@@ -508,16 +507,19 @@ export function ArticleGenerator({
 
           {/* Content Body */}
           <div className="flex-1">
-            {loading ? (
+            {!content && isStreaming ? (
               <div className="h-96 flex flex-col items-center justify-center text-slate-500 space-y-3">
                 <RefreshCw className="w-8 h-8 animate-spin text-indigo-400" />
-                <p className="text-xs text-slate-400">大模型正在深度构思与排版，并并行渲染 3 张商业大片...</p>
+                <p className="text-xs text-slate-400">大模型正在深度构思，流式输出即将开始...</p>
               </div>
             ) : content ? (
               <div className="space-y-4">
                 {previewMode === 'rendered' ? (
                   <div className="prose prose-invert prose-sm max-w-none text-slate-200 text-xs leading-relaxed whitespace-pre-wrap font-sans bg-slate-950/60 p-5 rounded-xl border border-slate-800/80 select-text">
                     {content}
+                    {isStreaming && (
+                      <span className="inline-block w-2 h-4 ml-0.5 bg-indigo-400 animate-pulse align-text-bottom" />
+                    )}
                   </div>
                 ) : (
                   <textarea
@@ -531,7 +533,7 @@ export function ArticleGenerator({
             ) : (
               <div className="h-96 flex flex-col items-center justify-center text-slate-500 space-y-2 border border-dashed border-slate-800 rounded-xl p-8 text-center">
                 <Sparkles className="w-8 h-8 text-slate-600" />
-                <p className="text-xs text-slate-400">在左侧输入主题并点击生成，即可获得排版文章与 3 张配套商业大片</p>
+                <p className="text-xs text-slate-400">在左侧输入主题并点击生成，正文将实时流式输出并自动配 3 张商业大片</p>
               </div>
             )}
           </div>

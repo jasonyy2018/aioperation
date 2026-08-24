@@ -30,7 +30,7 @@ export function getModelConfig(
   return DEFAULT_MODELS[0];
 }
 
-function resolveChatUrl(baseUrl: string): string {
+export function resolveChatUrl(baseUrl: string): string {
   let url = baseUrl.trim().replace(/\/+$/, '');
   if (url.endsWith('/chat/completions') || url.endsWith('/messages')) return url;
   if (url.endsWith('/v1')) return `${url}/chat/completions`;
