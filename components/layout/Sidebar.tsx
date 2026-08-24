@@ -54,6 +54,10 @@ interface SidebarProps {
   accountCount?: number;
   assetCount?: number;
   currentUser?: UserProfile;
+  /** 移动端抽屉是否打开 */
+  mobileOpen?: boolean;
+  /** 关闭移动端抽屉 */
+  onMobileClose?: () => void;
 }
 
 export function Sidebar({
@@ -62,8 +66,16 @@ export function Sidebar({
   accountCount = 0,
   assetCount = 0,
   currentUser,
+  mobileOpen = false,
+  onMobileClose,
 }: SidebarProps) {
   const roleDef = currentUser ? ROLE_DEFINITIONS[currentUser.role] : ROLE_DEFINITIONS.admin;
+
+  // 移动端点击菜单项后自动收起抽屉
+  const handleNavigate = (tab: NavTabId) => {
+    onTabChange(tab);
+    onMobileClose?.();
+  };
 
   const navGroups: {
     group: string;
@@ -131,7 +143,20 @@ export function Sidebar({
   ];
 
   return (
-    <aside className="w-64 shrink-0 bg-slate-900/95 border-r border-slate-800 flex flex-col h-full select-none z-20">
+    <>
+      {/* 移动端遮罩层 */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 lg:hidden"
+          onClick={onMobileClose}
+        />
+      )}
+
+      <aside
+        className={`w-64 shrink-0 bg-slate-900/95 border-r border-slate-800 flex flex-col h-full select-none z-40
+          fixed lg:relative inset-y-0 left-0 transition-transform duration-200 ease-out
+          ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}
+      >
       {/* Brand Header */}
       <div className="p-4 border-b border-slate-800/80 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -169,7 +194,7 @@ export function Sidebar({
                 return (
                   <button
                     key={item.id}
-                    onClick={() => onTabChange(item.id)}
+                    onClick={() => handleNavigate(item.id)}
                     className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all duration-150 group cursor-pointer ${
                       isActive
                         ? 'bg-gradient-to-r from-rose-500/15 to-purple-500/15 text-white border border-rose-500/30 shadow-sm font-semibold'
@@ -206,7 +231,7 @@ export function Sidebar({
       {/* Bottom User / Info Footer */}
       <div className="p-3 border-t border-slate-800/80 bg-slate-950/40">
         <div
-          onClick={() => onTabChange('users')}
+          onClick={() => handleNavigate('users')}
           className="flex items-center gap-2.5 p-2 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-indigo-500/50 cursor-pointer transition-all group"
           title="点击进入用户与角色权限管理"
         >
@@ -226,5 +251,6 @@ export function Sidebar({
         </div>
       </div>
     </aside>
+    </>
   );
 }

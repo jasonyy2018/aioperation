@@ -207,6 +207,9 @@ export default function HomePage() {
     authLogout();
   };
 
+  // 移动端侧边抽屉
+  const [sidebarMobileOpen, setSidebarMobileOpen] = useState<boolean>(false);
+
   // Render modules with error boundaries and keep state persistent in DOM
   const renderModule = (tab: NavTabId, children: React.ReactNode) => (
     <div key={tab} className={activeTab === tab ? 'block' : 'hidden'}>
@@ -224,6 +227,8 @@ export default function HomePage() {
         accountCount={accounts.length}
         assetCount={assets.length}
         currentUser={currentUser}
+        mobileOpen={sidebarMobileOpen}
+        onMobileClose={() => setSidebarMobileOpen(false)}
       />
 
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
@@ -233,9 +238,10 @@ export default function HomePage() {
           currentUser={currentUser}
           onLogout={handleLogout}
           onOpenUsers={() => setActiveTab('users')}
+          onOpenSidebarMobile={() => setSidebarMobileOpen(true)}
         />
 
-        <main className="flex-1 overflow-y-auto p-8 scrollbar-thin">
+        <main className="flex-1 overflow-y-auto p-4 sm:p-8 scrollbar-thin">
           <div className="max-w-7xl mx-auto pb-12">
             {renderModule('users',
               <UserManager

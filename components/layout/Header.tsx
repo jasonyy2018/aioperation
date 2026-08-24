@@ -9,6 +9,7 @@ import {
   Shield,
   ChevronDown,
   RefreshCw,
+  Menu,
 } from 'lucide-react';
 import { UserProfile } from '@/types';
 import { ROLE_DEFINITIONS } from '@/lib/constants/users';
@@ -20,6 +21,8 @@ interface HeaderProps {
   currentUser?: UserProfile;
   onLogout?: () => void;
   onOpenUsers?: () => void;
+  /** 移动端打开侧边抽屉 */
+  onOpenSidebarMobile?: () => void;
 }
 
 export function Header({
@@ -29,6 +32,7 @@ export function Header({
   currentUser,
   onLogout,
   onOpenUsers,
+  onOpenSidebarMobile,
 }: HeaderProps) {
   const [dropdownOpen, setDropdownOpen] = useState<boolean>(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -46,12 +50,24 @@ export function Header({
   }, []);
 
   return (
-    <header className="sticky top-0 z-30 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 px-8 py-4 flex items-center justify-between">
-      <div>
-        <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-          {title}
-        </h2>
-        <p className="text-xs text-slate-400 mt-0.5">{subtitle}</p>
+    <header className="sticky top-0 z-30 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 px-4 sm:px-8 py-4 flex items-center justify-between">
+      <div className="flex items-center gap-3 min-w-0">
+        {/* 移动端汉堡按钮 */}
+        {onOpenSidebarMobile && (
+          <button
+            onClick={onOpenSidebarMobile}
+            className="lg:hidden p-2 rounded-xl bg-slate-800/80 border border-slate-700/60 text-slate-300 hover:text-white hover:bg-slate-800 transition-all cursor-pointer shrink-0"
+            title="打开导航菜单"
+          >
+            <Menu className="w-4 h-4" />
+          </button>
+        )}
+        <div className="min-w-0">
+          <h2 className="text-base sm:text-xl font-bold text-slate-100 flex items-center gap-2 truncate">
+            {title}
+          </h2>
+          <p className="text-[10px] sm:text-xs text-slate-400 mt-0.5 truncate">{subtitle}</p>
+        </div>
       </div>
 
       <div className="flex items-center gap-3">
