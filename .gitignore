@@ -29,6 +29,9 @@ yarn-error.log*
 .env
 !.env.example
 
+# sqlite database (server-side persistence)
+/data/
+
 # api key protection - NEVER commit real keys
 .env.production
 .env.staging

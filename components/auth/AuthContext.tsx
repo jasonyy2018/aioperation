@@ -2,7 +2,13 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { UserProfile } from '@/types';
-import { DEFAULT_USERS } from '@/lib/constants/users';
+
+/**
+ * 认证上下文 v2 — 服务端 Session
+ * - 登录/注册/登出全部走服务端 API
+ * - 会话凭据存于 httpOnly Cookie（前端 JS 不可读取，防 XSS 窃取）
+ * - 页面刷新时通过 /api/auth/me 恢复登录态
+ */
 
 interface AuthState {
   user: UserProfile | null;
@@ -11,24 +17,20 @@ interface AuthState {
 }
 
 interface AuthContextType extends AuthState {
-  login: (username: string, password: string) => Promise<{ success: boolean; message: string; user?: UserProfile }>;
-  logout: () => void;
-  register: (user: UserProfile) => Promise<{ success: boolean; message: string }>;
-  updateUser: (updated: UserProfile) => void;
-  getUsers: () => UserProfile[];
-  updateUsers: (users: UserProfile[]) => void;
+  login: (username: string, password: string) => Promise<{ success: boolean; message: string }>;
+  logout: () => Promise<void>;
+  register: (input: RegisterInput) => Promise<{ success: boolean; message: string }>;
 }
 
-const STORAGE_KEYS = {
-  USER: 'automedia_current_user',
-  LOGGED_IN: 'automedia_is_logged_in',
-  USERS: 'automedia_users',
-  ATTEMPTS: 'automedia_login_attempts',
-  LOCKOUT: 'automedia_login_lockout',
-};
-
-const MAX_ATTEMPTS = 5;
-const LOCKOUT_DURATION_MS = 5 * 60 * 1000; // 5 minutes
+export interface RegisterInput {
+  username: string;
+  name: string;
+  password: string;
+  role?: string;
+  organization?: string;
+  phone?: string;
+  applyReason?: string;
+}
 
 const defaultState: AuthState = {
   user: null,
@@ -38,193 +40,101 @@ const defaultState: AuthState = {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-function loadUsers(): UserProfile[] {
-  if (typeof window === 'undefined') return DEFAULT_USERS;
-  try {
-    const saved = localStorage.getItem(STORAGE_KEYS.USERS);
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch { /* ignore */ }
-    }
-  } catch { /* ignore */ }
-  return DEFAULT_USERS;
-}
-
-function saveUsers(users: UserProfile[]) {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
-  } catch { /* ignore */ }
-}
-
-function loadUser(): UserProfile | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const saved = localStorage.getItem(STORAGE_KEYS.USER);
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch { return null; }
-    }
-  } catch { return null; }
-  return null;
-}
-
-function isLockedOut(): boolean {
-  if (typeof window === 'undefined') return false;
-  try {
-    const lockoutEnd = localStorage.getItem(STORAGE_KEYS.LOCKOUT);
-    if (lockoutEnd) {
-      return Date.now() < parseInt(lockoutEnd, 10);
-    }
-  } catch { return false; }
-  return false;
-}
-
-function getAttemptCount(): number {
-  if (typeof window === 'undefined') return 0;
-  try {
-    const data = JSON.parse(localStorage.getItem(STORAGE_KEYS.ATTEMPTS) || '{}');
-    if (data.lastReset && Date.now() - parseInt(data.lastReset, 10) > 15 * 60 * 1000) {
-      localStorage.removeItem(STORAGE_KEYS.ATTEMPTS);
-      return 0;
-    }
-    return data.count || 0;
-  } catch { return 0; }
-}
-
-function incrementAttempts() {
-  if (typeof window === 'undefined') return;
-  try {
-    const data = JSON.parse(localStorage.getItem(STORAGE_KEYS.ATTEMPTS) || '{}');
-    localStorage.setItem(STORAGE_KEYS.ATTEMPTS, JSON.stringify({
-      count: (data.count || 0) + 1,
-      lastReset: Date.now().toString(),
-    }));
-  } catch { /* ignore */ }
-}
-
-function clearAttempts() {
-  if (typeof window === 'undefined') return;
-  localStorage.removeItem(STORAGE_KEYS.ATTEMPTS);
+/** 服务端 SafeUser → 前端 UserProfile 形状适配 */
+function adaptUser(safe: any): UserProfile {
+  return {
+    id: safe.id,
+    username: safe.username,
+    name: safe.name,
+    role: safe.role,
+    organization: safe.organization,
+    email: safe.email,
+    phone: safe.phone,
+    status: (safe.status as UserProfile['status']) || 'active',
+    createdAt: safe.createdAt || '',
+    lastLoginAt: safe.lastLoginAt,
+  };
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AuthState>(defaultState);
 
-  // Initialize from localStorage
+  // Restore session from server on mount
   useEffect(() => {
-    const user = loadUser();
-    const isLoggedIn = localStorage.getItem(STORAGE_KEYS.LOGGED_IN) === 'true';
-    if (user && isLoggedIn && user.status === 'active') {
-      setState({ user, isLoggedIn: true, isLoading: false });
-    } else {
-      setState({ ...defaultState, isLoading: false });
-    }
+    let cancelled = false;
+    const restore = async () => {
+      try {
+        const res = await fetch('/api/auth/me', { cache: 'no-store' });
+        const data = await res.json();
+        if (!cancelled && data.isLoggedIn && data.user) {
+          setState({
+            user: adaptUser(data.user),
+            isLoggedIn: true,
+            isLoading: false,
+          });
+          return;
+        }
+      } catch { /* network error → treat as logged out */ }
+      if (!cancelled) setState({ ...defaultState, isLoading: false });
+    };
+    restore();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const login = useCallback(async (username: string, password: string): Promise<{ success: boolean; message: string; user?: UserProfile }> => {
-    // Rate limiting check
-    if (isLockedOut()) {
-      return { success: false, message: '账号暂时锁定，请稍后再试' };
-    }
+  const login = useCallback(
+    async (username: string, password: string): Promise<{ success: boolean; message: string }> => {
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+        });
+        const data = await res.json();
 
-    const attempts = getAttemptCount();
-    if (attempts >= MAX_ATTEMPTS) {
-      localStorage.setItem(STORAGE_KEYS.LOCKOUT, (Date.now() + LOCKOUT_DURATION_MS).toString());
-      return { success: false, message: '登录尝试过多，账号已锁定 5 分钟' };
-    }
+        if (data.success && data.user) {
+          // Fetch fresh user info via /me to normalize shape
+          setState({
+            user: adaptUser(data.user),
+            isLoggedIn: true,
+            isLoading: false,
+          });
+        }
+        return { success: !!data.success, message: data.message || '' };
+      } catch {
+        return { success: false, message: '网络错误，请稍后重试' };
+      }
+    },
+    []
+  );
 
-    const users = loadUsers();
-    const matched = users.find(
-      (u) =>
-        (u.username && u.username.toLowerCase() === username.toLowerCase()) ||
-        (u.email && u.email.toLowerCase() === username.toLowerCase()) ||
-        (u.phone && u.phone === username)
-    );
-
-    if (!matched) {
-      incrementAttempts();
-      return { success: false, message: '账号不存在' };
-    }
-
-    if (matched.password && matched.password !== password) {
-      incrementAttempts();
-      const remaining = MAX_ATTEMPTS - getAttemptCount();
-      return { success: false, message: `密码错误${remaining > 0 ? `（还剩 ${remaining} 次尝试）` : ''}` };
-    }
-
-    if (matched.status === 'pending_approval') {
-      return { success: false, message: '账号正在等待审核，请联系管理员' };
-    }
-
-    if (matched.status === 'disabled') {
-      return { success: false, message: '账号已被禁用' };
-    }
-
-    if (matched.status === 'rejected') {
-      return { success: false, message: '注册申请已被拒绝' };
-    }
-
-    // Login success - clear attempts
-    clearAttempts();
-    localStorage.removeItem(STORAGE_KEYS.LOCKOUT);
-
-    const loggedInUser = { ...matched, lastLoginAt: '刚刚' };
-    localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(loggedInUser));
-    localStorage.setItem(STORAGE_KEYS.LOGGED_IN, 'true');
-
-    setState({ user: loggedInUser, isLoggedIn: true, isLoading: false });
-    return { success: true, message: `欢迎回来，${loggedInUser.name}！`, user: loggedInUser };
+  const logout = useCallback(async () => {
+    try {
+      await fetch('/api/auth/login', { method: 'DELETE' });
+    } catch { /* ignore */ }
+    setState({ ...defaultState, isLoading: false });
   }, []);
 
-  const logout = useCallback(() => {
-    localStorage.removeItem(STORAGE_KEYS.USER);
-    localStorage.setItem(STORAGE_KEYS.LOGGED_IN, 'false');
-    clearAttempts();
-    localStorage.removeItem(STORAGE_KEYS.LOCKOUT);
-    setState({ ...defaultState });
-  }, []);
-
-  const register = useCallback((user: UserProfile): Promise<{ success: boolean; message: string }> => {
-    const users = loadUsers();
-
-    // Check duplicates
-    const trimmedUsername = user.username?.trim().toLowerCase() || '';
-    const duplicateUser = users.find(
-      (u) => u.username?.toLowerCase() === trimmedUsername
-    );
-    if (duplicateUser) {
-      return Promise.resolve({ success: false, message: '用户名已被占用' });
-    }
-
-    if (user.phone && users.some((u) => u.phone === user.phone)) {
-      return Promise.resolve({ success: false, message: '手机号已被注册' });
-    }
-
-    const updated = [...users, user];
-    saveUsers(updated);
-    return Promise.resolve({ success: true, message: '注册申请已提交，等待管理员审核' });
-  }, []);
-
-  const updateUser = useCallback((updated: UserProfile) => {
-    const users = loadUsers();
-    const updatedUsers = users.map((u) => (u.id === updated.id ? updated : u));
-    saveUsers(updatedUsers);
-
-    // Update current user if needed
-    if (state.user && state.user.id === updated.id) {
-      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(updated));
-      setState((prev) => ({ ...prev, user: updated }));
-    }
-  }, [state.user]);
-
-  const getUsers = useCallback(() => loadUsers(), []);
-  const updateUsers = useCallback((users: UserProfile[]) => saveUsers(users), []);
+  const register = useCallback(
+    async (input: RegisterInput): Promise<{ success: boolean; message: string }> => {
+      try {
+        const res = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(input),
+        });
+        const data = await res.json();
+        return { success: !!data.success, message: data.message || '' };
+      } catch {
+        return { success: false, message: '网络错误，请稍后重试' };
+      }
+    },
+    []
+  );
 
   return (
-    <AuthContext.Provider value={{ ...state, login, logout, register, updateUser, getUsers, updateUsers }}>
+    <AuthContext.Provider value={{ ...state, login, logout, register }}>
       {children}
     </AuthContext.Provider>
   );

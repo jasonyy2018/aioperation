@@ -16,7 +16,7 @@ interface LoginPageProps {
 }
 
 export function LoginPage({ onLoginSuccess }: LoginPageProps) {
-  const { login, register, getUsers } = useAuth();
+  const { login, register } = useAuth();
   const { showToast } = useToast();
   const [username, setUsername] = useState<string>('admin');
   const [password, setPassword] = useState<string>('admin');
@@ -65,21 +65,15 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
       return;
     }
 
-    const newUser = {
-      id: `user_${Date.now()}`,
+    const result = await register({
       username: regUsername.trim(),
       name: regName.trim(),
       password: regPassword.trim(),
-      role: 'student' as const,
-      appliedRole: 'student' as const,
+      role: 'student',
       applyReason: regReason.trim(),
       organization: regOrg.trim(),
       phone: regPhone.trim() || undefined,
-      status: 'pending_approval' as const,
-      createdAt: new Date().toISOString().split('T')[0],
-    };
-
-    const result = await register(newUser);
+    });
     if (result.success) {
       setSubmittedNotice(true);
       showToast(result.message, 'success');

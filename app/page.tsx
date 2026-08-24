@@ -59,7 +59,7 @@ const TAB_CONFIG: Record<string, { title: string; subtitle: string; errorName?: 
 };
 
 export default function HomePage() {
-  const { user: authUser, isLoggedIn, isLoading: authLoading, updateUser, getUsers, updateUsers } = useAuth();
+  const { user: authUser, isLoggedIn, isLoading: authLoading, logout: authLogout } = useAuth();
   const [activeTab, setActiveTab] = useState<NavTabId>('mandala');
   const [isHydrated, setIsHydrated] = useState<boolean>(false);
 
@@ -90,21 +90,32 @@ export default function HomePage() {
 
       const savedPrompts = localStorage.getItem('automedia_prompts');
       if (savedPrompts) setPrompts(safeJsonParse(savedPrompts, DEFAULT_PROMPTS));
-
-      const savedAccounts = localStorage.getItem('automedia_accounts');
-      if (savedAccounts) setAccounts(safeJsonParse(savedAccounts, []));
-
-      const savedAssets = localStorage.getItem('automedia_assets');
-      if (savedAssets) setAssets(safeJsonParse(savedAssets, []));
-
-      const savedUsers = localStorage.getItem('automedia_users');
-      if (savedUsers) setUsers(safeJsonParse(savedUsers, DEFAULT_USERS));
     } catch (e) {
       console.error('Failed to load local storage state:', e);
     } finally {
       setIsHydrated(true);
     }
   }, []);
+
+  // Load server-persisted assets after login
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    let cancelled = false;
+    const loadAssets = async () => {
+      try {
+        const res = await fetch('/api/data/assets', { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled && Array.isArray(data.assets)) {
+          setAssets(data.assets);
+        }
+      } catch { /* offline → keep local state */ }
+    };
+    loadAssets();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn]);
 
   // Save helpers
   const saveToStorage = (key: string, data: unknown) => {
@@ -125,17 +136,26 @@ export default function HomePage() {
 
   const updateAccounts = (newAccounts: SocialAccount[]) => {
     setAccounts(newAccounts);
-    saveToStorage('automedia_accounts', newAccounts);
   };
 
-  const updateAssets = (newAssets: MediaAsset[]) => {
-    setAssets(newAssets);
-    saveToStorage('automedia_assets', newAssets);
-  };
-
+  /** Save asset locally + sync to server (fire-and-forget) */
   const handleSaveAsset = (asset: MediaAsset) => {
-    const updated = [asset, ...assets];
-    updateAssets(updated);
+    setAssets((prev) => [asset, ...prev]);
+    fetch('/api/data/assets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(asset),
+    }).catch(() => { /* silent — local copy still exists */ });
+  };
+
+  const handleDeleteAsset = (id: string) => {
+    setAssets((prev) => prev.filter((a) => a.id !== id));
+    fetch(`/api/data/assets?id=${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
+  };
+
+  const handleClearAssets = () => {
+    setAssets([]);
+    fetch('/api/data/assets?id=__all__', { method: 'DELETE' }).catch(() => {});
   };
 
   // Cross-module navigation handlers
@@ -183,6 +203,10 @@ export default function HomePage() {
     );
   }
 
+  const handleLogout = () => {
+    authLogout();
+  };
+
   // Render modules with error boundaries and keep state persistent in DOM
   const renderModule = (tab: NavTabId, children: React.ReactNode) => (
     <div key={tab} className={activeTab === tab ? 'block' : 'hidden'}>
@@ -207,10 +231,7 @@ export default function HomePage() {
           title={TAB_CONFIG[activeTab]?.title || activeTab}
           subtitle={TAB_CONFIG[activeTab]?.subtitle || ''}
           currentUser={currentUser}
-          onLogout={() => {
-            localStorage.setItem('automedia_is_logged_in', 'false');
-            window.location.reload();
-          }}
+          onLogout={handleLogout}
           onOpenUsers={() => setActiveTab('users')}
         />
 
@@ -221,24 +242,18 @@ export default function HomePage() {
                 users={users}
                 currentUser={currentUser}
                 onAddUser={(u) => {
-                  const updated = [...users, u];
-                  setUsers(updated);
-                  updateUsers(updated);
+                  setUsers([...users, u]);
                 }}
                 onUpdateUser={(u) => {
-                  const updated = users.map((item) => (item.id === u.id ? u : item));
-                  setUsers(updated);
-                  updateUsers(updated);
+                  setUsers(users.map((item) => (item.id === u.id ? u : item)));
                   if (currentUser.id === u.id) setCurrentUser(u);
                 }}
                 onDeleteUser={(id) => {
-                  const updated = users.filter((item) => item.id !== id);
-                  setUsers(updated);
-                  updateUsers(updated);
+                  setUsers(users.filter((item) => item.id !== id));
                 }}
                 onSwitchUser={(u) => {
                   setCurrentUser(u);
-                  updateUsers(users.map((item) => (item.id === u.id ? { ...u, lastLoginAt: '刚刚' } : item)));
+                  setUsers(users.map((item) => (item.id === u.id ? { ...u, lastLoginAt: '刚刚' } : item)));
                 }}
               />
             )}
@@ -342,8 +357,8 @@ export default function HomePage() {
             {renderModule('assets',
               <AssetLibrary
                 assets={assets}
-                onDeleteAsset={(id) => updateAssets(assets.filter((a) => a.id !== id))}
-                onClearAll={() => updateAssets([])}
+                onDeleteAsset={handleDeleteAsset}
+                onClearAll={handleClearAssets}
               />
             )}
 
