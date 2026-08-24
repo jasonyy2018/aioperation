@@ -10,6 +10,9 @@ services:
     restart: unless-stopped
     ports:
       - "8765:8765"
+    volumes:
+      # 持久化 SQLite 数据库（用户/会话/资产数据），容器重建不丢失
+      - ./data:/app/data
     environment:
       - NODE_ENV=production
       - PORT=8765
@@ -20,6 +23,8 @@ services:
       - AGNES_API_KEY=${AGNES_API_KEY}
       - ARK_API_KEY=${ARK_API_KEY}
       - SEEDANCE_MINI_API_KEY=${SEEDANCE_MINI_API_KEY}
+    # 数据目录权限：容器内 nextjs 用户 (uid 1001) 需可写
+    user: "1001:1001"
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8765/api/health"]
       interval: 30s

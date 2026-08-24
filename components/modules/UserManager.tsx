@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Users,
   UserPlus,
@@ -35,6 +35,8 @@ interface UserManagerProps {
   onUpdateUser: (user: UserProfile) => void;
   onDeleteUser: (id: string) => void;
   onSwitchUser?: (user: UserProfile) => void;
+  /** 用服务端返回的完整列表替换本地 state（管理员登录后同步） */
+  onReplaceUsers?: (users: UserProfile[]) => void;
 }
 
 export function UserManager({
@@ -44,6 +46,7 @@ export function UserManager({
   onUpdateUser,
   onDeleteUser,
   onSwitchUser,
+  onReplaceUsers,
 }: UserManagerProps) {
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState<'users' | 'approvals' | 'matrix'>('users');
@@ -51,6 +54,7 @@ export function UserManager({
   const [filterRole, setFilterRole] = useState<string>('all');
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [serverLoaded, setServerLoaded] = useState<boolean>(false);
 
   // Approval modal state
   const [approvingUser, setApprovingUser] = useState<UserProfile | null>(null);
@@ -75,6 +79,78 @@ export function UserManager({
   });
 
   const pendingApprovals = users.filter((u) => u.status === 'pending_approval');
+
+  /** 服务端用户操作（approve/reject/disable/enable/setRole/delete），成功后同步本地 state */
+  const serverUserAction = async (
+    action: string,
+    target: UserProfile,
+    extra?: Record<string, unknown>
+  ): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/data/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: target.id, action, ...extra }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        showToast(data.error || '服务端操作失败', 'error');
+        return false;
+      }
+      // 用服务端返回的权威数据更新本地
+      if (data.user) {
+        onUpdateUser({
+          ...target,
+          id: data.user.id,
+          username: data.user.username,
+          name: data.user.name,
+          role: data.user.role,
+          organization: data.user.organization,
+          email: data.user.email,
+          phone: data.user.phone,
+          status: data.user.status,
+        });
+      }
+      return true;
+    } catch {
+      showToast('网络错误，操作未保存到服务器', 'error');
+      return false;
+    }
+  };
+
+  /** 登录后从服务端拉取最新用户列表 */
+  useEffect(() => {
+    let cancelled = false;
+    const loadUsers = async () => {
+      try {
+        const res = await fetch('/api/data/users', { cache: 'no-store' });
+        if (!res.ok) return; // 非管理员或未登录 → 保持本地数据
+        const data = await res.json();
+        if (!cancelled && Array.isArray(data.users)) {
+          setServerLoaded(true);
+          onReplaceUsers?.(
+            data.users.map((u: any) => ({
+              id: u.id,
+              username: u.username,
+              name: u.name,
+              role: u.role,
+              organization: u.organization,
+              email: u.email,
+              phone: u.phone,
+              status: u.status,
+              createdAt: u.createdAt || '',
+              lastLoginAt: u.lastLoginAt,
+            }))
+          );
+        }
+      } catch { /* 离线 → 本地数据兜底 */ }
+    };
+    loadUsers();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filteredUsers = users.filter((u) => {
     const matchSearch =
@@ -155,14 +231,12 @@ export function UserManager({
     setIsModalOpen(false);
   };
 
-  // Direct Approve
-  const handleDirectApprove = (user: UserProfile) => {
-    onUpdateUser({
-      ...user,
-      status: 'active',
-      role: user.appliedRole || user.role,
-    });
-    showToast(`已通过 ${user.name} 的注册申请！角色：${ROLE_DEFINITIONS[user.appliedRole || user.role].name}`, 'success');
+  // Direct Approve — 服务端审批
+  const handleDirectApprove = async (user: UserProfile) => {
+    const ok = await serverUserAction('approve', user);
+    if (ok) {
+      showToast(`已通过 ${user.name} 的注册申请！角色：${ROLE_DEFINITIONS[user.appliedRole || user.role].name}`, 'success');
+    }
   };
 
   // Open Adjusted Approval Modal
@@ -171,26 +245,27 @@ export function UserManager({
     setAdjustedRole(user.appliedRole || user.role || 'student');
   };
 
-  // Confirm Adjusted Approval
-  const handleConfirmAdjustedApprove = () => {
+  // Confirm Adjusted Approval — 服务端审批（先调角色再激活）
+  const handleConfirmAdjustedApprove = async () => {
     if (!approvingUser) return;
-    onUpdateUser({
-      ...approvingUser,
-      status: 'active',
-      role: adjustedRole,
-    });
-    showToast(`审批通过！已将 ${approvingUser.name} 的角色调整为：${ROLE_DEFINITIONS[adjustedRole].name}`, 'success');
+    // 先调整角色，再审批激活
+    if (adjustedRole !== approvingUser.appliedRole && adjustedRole !== approvingUser.role) {
+      await serverUserAction('setRole', approvingUser, { role: adjustedRole });
+    }
+    const ok = await serverUserAction('approve', { ...approvingUser, appliedRole: adjustedRole });
+    if (ok) {
+      showToast(`审批通过！已将 ${approvingUser.name} 的角色调整为：${ROLE_DEFINITIONS[adjustedRole].name}`, 'success');
+    }
     setApprovingUser(null);
   };
 
-  // Reject Application
-  const handleReject = (user: UserProfile) => {
+  // Reject Application — 服务端拒绝
+  const handleReject = async (user: UserProfile) => {
     if (confirm(`确定拒绝 ${user.name} 的注册申请吗？`)) {
-      onUpdateUser({
-        ...user,
-        status: 'rejected',
-      });
-      showToast(`已拒绝 ${user.name} 的注册申请`, 'info');
+      const ok = await serverUserAction('reject', user);
+      if (ok) {
+        showToast(`已拒绝 ${user.name} 的注册申请`, 'info');
+      }
     }
   };
 

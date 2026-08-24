@@ -22,6 +22,7 @@ import { SocialAccount, AIModelConfig, PromptTemplate } from '@/types';
 import { Modal } from '@/components/ui/Modal';
 import { Badge } from '@/components/ui/Badge';
 import { formatNumber, extractJsonFromAIResponse } from '@/lib/utils';
+import { useStreamingText } from '@/hooks/useStreamingText';
 
 interface AccountMatrixProps {
   accounts: SocialAccount[];
@@ -52,6 +53,7 @@ export function AccountMatrix({
   prompts = [],
 }: AccountMatrixProps) {
   const { showToast } = useToast();
+  const { streamText, stopStream, isStreaming } = useStreamingText();
   const textModels = models.filter((m) => m.type === 'text');
   const [selectedModel, setSelectedModel] = useState<string>(textModels[0]?.id || 'minimax-text');
 
@@ -165,21 +167,16 @@ export function AccountMatrix({
       const promptContent = prompts.find((p) => p.id === 'compliance-check')?.content || '';
       const userPrompt = `待排查文案：\n${draftContent}\n请按规范返回违规词排查与合规改写 JSON。`;
 
-      const res = await fetch('/api/ai/text', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          modelId: selectedModel,
-          systemPrompt: promptContent,
-          userPrompt,
-          customModels: models,
-        }),
+      // 流式生成
+      const fullText = await streamText({
+        modelId: selectedModel,
+        systemPrompt: promptContent,
+        userPrompt,
+        customModels: models,
       });
+      if (!fullText.trim()) throw new Error('模型未返回内容');
 
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || '自检失败');
-
-      const parsed = extractJsonFromAIResponse<any>(data.text, {
+      const parsed = extractJsonFromAIResponse<any>(fullText, {
         score: 95,
         riskLevel: '低风险',
         issues: [],

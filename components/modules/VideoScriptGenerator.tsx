@@ -18,6 +18,7 @@ import { useToast } from '@/components/ui/Toast';
 import { MediaAsset, AIModelConfig, PromptTemplate, VideoScriptData, ScriptScene } from '@/types';
 
 import { AIModelSelector } from '@/components/ui/AIModelSelector';
+import { useStreamingText } from '@/hooks/useStreamingText';
 import { safeJsonParse, extractJsonFromAIResponse } from '@/lib/utils';
 
 interface VideoScriptGeneratorProps {
@@ -45,6 +46,8 @@ export function VideoScriptGenerator({
   const [copied, setCopied] = useState<boolean>(false);
   const [scenes, setScenes] = useState<ScriptScene[]>([]);
   const [selectedBgm, setSelectedBgm] = useState<string>('轻快科技节奏 (UP Beat Tech)');
+  const [rawStream, setRawStream] = useState<string>('');
+  const { streamText, stopStream, isStreaming } = useStreamingText();
 
   // Restore draft on mount
   useEffect(() => {
@@ -113,6 +116,7 @@ export function VideoScriptGenerator({
     }
 
     setLoading(true);
+    setRawStream('');
     try {
       const platObj = platformList.find((p) => p.id === platform);
       const matchedPrompt = prompts.find((p) => p.id === platObj?.promptId)?.content || '';
@@ -130,21 +134,18 @@ export function VideoScriptGenerator({
 
       const userPrompt = `目标视频时长：${duration}。视频主题：${theme}。请设计具有强吸睛前3秒和高完播率的分镜脚本。`;
 
-      const res = await fetch('/api/ai/text', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          modelId: selectedModel,
-          systemPrompt,
-          userPrompt,
-          customModels: models,
-        }),
+      // 流式生成 — 实时显示原始 JSON 输出进度
+      const fullText = await streamText({
+        modelId: selectedModel,
+        systemPrompt,
+        userPrompt,
+        customModels: models,
+        onDelta: (full) => setRawStream(full),
       });
 
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || '生成分镜失败');
+      if (!fullText.trim()) throw new Error('模型未返回内容');
 
-      const rawParsed = extractJsonFromAIResponse<any[]>(data.text, []);
+      const rawParsed = extractJsonFromAIResponse<any[]>(fullText, []);
       if (!rawParsed || !Array.isArray(rawParsed) || rawParsed.length === 0) {
         throw new Error('未能正确解析分镜数据');
       }
@@ -310,15 +311,37 @@ export function VideoScriptGenerator({
             placeholder="输入短视频策划主题（如：给小白的3个AI变现副业方向）..."
             className="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-pink-500"
           />
-          <button
-            onClick={handleGenerate}
-            disabled={loading}
-            className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 text-white font-semibold text-sm shadow-md shadow-pink-600/20 disabled:opacity-50 transition-all cursor-pointer"
-          >
-            {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-            <span>{loading ? 'AI 正在拆解分镜...' : '一键生成分镜脚本'}</span>
-          </button>
+          {isStreaming ? (
+            <button
+              onClick={stopStream}
+              className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 text-white font-semibold text-sm shadow-md shadow-rose-600/20 transition-all cursor-pointer"
+            >
+              <RefreshCw className="w-4 h-4 animate-spin" />
+              <span>流式输出中 · 点击停止</span>
+            </button>
+          ) : (
+            <button
+              onClick={handleGenerate}
+              className="flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 text-white font-semibold text-sm shadow-md shadow-pink-600/20 transition-all cursor-pointer"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>一键生成分镜脚本 (流式)</span>
+            </button>
+          )}
         </div>
+
+        {/* 流式原始输出进度 */}
+        {isStreaming && rawStream && (
+          <div className="mt-3 p-3 bg-slate-950 border border-slate-800 rounded-xl max-h-40 overflow-y-auto scrollbar-thin">
+            <p className="text-[10px] text-slate-500 mb-1 flex items-center gap-1.5">
+              <RefreshCw className="w-3 h-3 animate-spin text-pink-400" />
+              正在生成，已接收 {rawStream.length} 字符...
+            </p>
+            <pre className="text-[10px] text-slate-400 font-mono whitespace-pre-wrap break-all leading-relaxed">
+              {rawStream.slice(-500)}
+            </pre>
+          </div>
+        )}
       </div>
 
       {/* Storyboard Table */}

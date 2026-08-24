@@ -19,6 +19,7 @@ import { MediaAsset, AIModelConfig, PromptTemplate, GeneratedImage } from '@/typ
 import { Modal } from '@/components/ui/Modal';
 import { AIModelSelector } from '@/components/ui/AIModelSelector';
 import { safeJsonParse } from '@/lib/utils';
+import { useStreamingText } from '@/hooks/useStreamingText';
 
 interface ImageStudioProps {
   onSaveAsset?: (asset: MediaAsset) => void;
@@ -28,6 +29,7 @@ interface ImageStudioProps {
 
 export function ImageStudio({ onSaveAsset, models, prompts }: ImageStudioProps) {
   const { showToast } = useToast();
+  const { streamText, stopStream, isStreaming: textGenerating } = useStreamingText();
   const imageModels = models.filter((m) => m.type === 'image');
   const textModels = models.filter((m) => m.type === 'text');
 
@@ -115,23 +117,17 @@ export function ImageStudio({ onSaveAsset, models, prompts }: ImageStudioProps) 
       const activeTextModelId = defaultTextModel || textModels.find((m) => m.status === 'active')?.id || textModels[0]?.id || 'volcengine-plan';
       const imgSystemPrompt = prompts.find((p) => p.id === 'image-system')?.content || '';
 
-      const res = await fetch('/api/ai/text', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          modelId: activeTextModelId,
-          systemPrompt: imgSystemPrompt || '你是一位顶级商业视觉创意总监，擅长将简短描述扩写为高质感生图Prompt，包含主体特征、光影氛围、构图运镜与材质细节。',
-          userPrompt: `请将以下图片创意扩写为极具视觉张力和商业质感的详细生图提示词（直接输出扩写结果，无其他废话）：${prompt}`,
-          customModels: models,
-        }),
+      // 流式生成
+      const fullText = await streamText({
+        modelId: activeTextModelId,
+        systemPrompt: imgSystemPrompt || '你是一位顶级商业视觉创意总监，擅长将简短描述扩写为高质感生图Prompt，包含主体特征、光影氛围、构图运镜与材质细节。',
+        userPrompt: `请将以下图片创意扩写为极具视觉张力和商业质感的详细生图提示词（直接输出扩写结果，无其他废话）：${prompt}`,
+        customModels: models,
       });
-      const data = await res.json();
-      if (res.ok && data.text) {
-        setPrompt(data.text.trim());
-        showToast('已完成提示词智能润色！', 'success');
-      } else {
-        throw new Error(data.error || '润色失败');
-      }
+      if (!fullText.trim()) throw new Error('模型未返回内容');
+
+      setPrompt(fullText.trim());
+      showToast('已完成提示词智能润色！', 'success');
     } catch (err: any) {
       showToast(err.message || '提示词润色失败，请检查大模型配置', 'error');
     } finally {

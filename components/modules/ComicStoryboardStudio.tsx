@@ -28,6 +28,7 @@ import {
 import { Badge } from '@/components/ui/Badge';
 
 import { AIModelSelector } from '@/components/ui/AIModelSelector';
+import { useStreamingText } from '@/hooks/useStreamingText';
 import { safeJsonParse, extractJsonFromAIResponse } from '@/lib/utils';
 
 interface ComicStoryboardStudioProps {
@@ -46,6 +47,7 @@ export function ComicStoryboardStudio({
   onSendToVideoStudio,
 }: ComicStoryboardStudioProps) {
   const { showToast } = useToast();
+  const { streamText, stopStream, isStreaming } = useStreamingText();
   const textModels = models.filter((m) => m.type === 'text');
   const imageModels = models.filter((m) => m.type === 'image');
   const [selectedTextModel, setSelectedTextModel] = useState<string>(textModels[0]?.id || 'volcengine-plan');
@@ -131,21 +133,15 @@ export function ComicStoryboardStudio({
       const promptContent = prompts.find((p) => p.id === 'comic-storyboard')?.content || '';
       const userPrompt = `漫剧主题：【${theme}】。\n带货卖点 (FABE)：【${productSellingPoint}】。\n请输出 4 幕标准分镜（前3秒黄金钩子、痛点剧情展开、FABE卖点突围、行动号召转化）。`;
 
-      const res = await fetch('/api/ai/text', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          modelId: selectedTextModel,
-          systemPrompt: promptContent,
-          userPrompt,
-          customModels: models,
-        }),
+      const fullText = await streamText({
+        modelId: selectedTextModel,
+        systemPrompt: promptContent,
+        userPrompt,
+        customModels: models,
       });
+      if (!fullText.trim()) throw new Error('模型未返回内容');
 
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || '生成漫剧分镜失败');
-
-      const parsed = extractJsonFromAIResponse<ComicSceneCard[]>(data.text, []);
+      const parsed = extractJsonFromAIResponse<ComicSceneCard[]>(fullText, []);
       if (!parsed || parsed.length === 0) {
         throw new Error('未能正确解析漫剧分镜，请重试');
       }
@@ -203,21 +199,15 @@ export function ComicStoryboardStudio({
       const promptContent = prompts.find((p) => p.id === 'comic-threeviews')?.content || '';
       const userPrompt = `主体名称：【${charName}】\n视觉风格：【${charStyle}】\n特征细节与服饰道具：【${charFeatures}】\n请严格按JSON结构输出三视图Prompt方案。`;
 
-      const res = await fetch('/api/ai/text', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          modelId: selectedTextModel,
-          systemPrompt: promptContent,
-          userPrompt,
-          customModels: models,
-        }),
+      const fullText = await streamText({
+        modelId: selectedTextModel,
+        systemPrompt: promptContent,
+        userPrompt,
+        customModels: models,
       });
+      if (!fullText.trim()) throw new Error('模型未返回内容');
 
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || '生成三视图提示词失败');
-
-      const parsed = extractJsonFromAIResponse<ThreeViewsAsset | null>(data.text, null);
+      const parsed = extractJsonFromAIResponse<ThreeViewsAsset | null>(fullText, null);
       if (!parsed) {
         throw new Error('未能正确解析三视图提示词数据');
       }

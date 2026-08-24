@@ -20,9 +20,9 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/components/ui/Toast';
 import { AIModelConfig, PromptTemplate, MediaAsset, MandalaDimension, AccountProfileSet } from '@/types';
-import { Badge } from '@/components/ui/Badge';
-
 import { AIModelSelector } from '@/components/ui/AIModelSelector';
+import { useStreamingText } from '@/hooks/useStreamingText';
+import { Badge } from '@/components/ui/Badge';
 import { safeJsonParse, extractJsonFromAIResponse } from '@/lib/utils';
 
 interface MandalaTopicPlannerProps {
@@ -41,6 +41,7 @@ export function MandalaTopicPlanner({
   onSendToStoryboard,
 }: MandalaTopicPlannerProps) {
   const { showToast } = useToast();
+  const { streamText, stopStream, isStreaming } = useStreamingText();
   const textModels = models.filter((m) => m.type === 'text');
   const [selectedModel, setSelectedModel] = useState<string>(textModels[0]?.id || 'volcengine-plan');
   const [activeSubTab, setActiveSubTab] = useState<'mandala' | 'profile' | 'cases'>('mandala');
@@ -110,21 +111,16 @@ export function MandalaTopicPlanner({
       const promptContent = prompts.find((p) => p.id === 'mandala-topic')?.content || '';
       const userPrompt = `核心主题/赛道：【${coreKeyword}】。请使用曼陀罗九宫格模型发散8个维度并生成各维度的爆款短视频/直播选题。`;
 
-      const res = await fetch('/api/ai/text', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          modelId: selectedModel,
-          systemPrompt: promptContent,
-          userPrompt,
-          customModels: models,
-        }),
+      // 流式生成
+      const fullText = await streamText({
+        modelId: selectedModel,
+        systemPrompt: promptContent,
+        userPrompt,
+        customModels: models,
       });
+      if (!fullText.trim()) throw new Error('模型未返回内容');
 
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || '生成失败');
-
-      const parsed = extractJsonFromAIResponse<MandalaDimension[]>(data.text, []);
+      const parsed = extractJsonFromAIResponse<MandalaDimension[]>(fullText, []);
       if (!parsed || parsed.length === 0) {
         throw new Error('未能正确解析选题矩阵数据，请重试');
       }
@@ -152,21 +148,16 @@ export function MandalaTopicPlanner({
       const promptContent = prompts.find((p) => p.id === 'ip-profile')?.content || '';
       const userPrompt = `行业与产品：【${industry}】。\n期望人设风格：【${ipType}】。\n请输出完整的账号四件套与商业变现定位方案。`;
 
-      const res = await fetch('/api/ai/text', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          modelId: selectedModel,
-          systemPrompt: promptContent,
-          userPrompt,
-          customModels: models,
-        }),
+      // 流式生成
+      const fullText = await streamText({
+        modelId: selectedModel,
+        systemPrompt: promptContent,
+        userPrompt,
+        customModels: models,
       });
+      if (!fullText.trim()) throw new Error('模型未返回内容');
 
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || '生成失败');
-
-      const parsed = extractJsonFromAIResponse<AccountProfileSet | null>(data.text, null);
+      const parsed = extractJsonFromAIResponse<AccountProfileSet | null>(fullText, null);
       if (!parsed) {
         throw new Error('未能正确解析人设数据，请重试');
       }

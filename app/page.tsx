@@ -77,6 +77,9 @@ export default function HomePage() {
   const [comicPrefill, setComicPrefill] = useState<string>('');
   const [videoStudioPrefill, setVideoStudioPrefill] = useState<string>('');
 
+  // 移动端侧边抽屉（必须声明在所有提前 return 之前 — Rules of Hooks）
+  const [sidebarMobileOpen, setSidebarMobileOpen] = useState<boolean>(false);
+
   // Sync auth user - keep in sync when auth state changes
   useEffect(() => {
     if (authUser) setCurrentUser(authUser);
@@ -207,9 +210,6 @@ export default function HomePage() {
     authLogout();
   };
 
-  // 移动端侧边抽屉
-  const [sidebarMobileOpen, setSidebarMobileOpen] = useState<boolean>(false);
-
   // Render modules with error boundaries and keep state persistent in DOM
   const renderModule = (tab: NavTabId, children: React.ReactNode) => (
     <div key={tab} className={activeTab === tab ? 'block' : 'hidden'}>
@@ -261,6 +261,7 @@ export default function HomePage() {
                   setCurrentUser(u);
                   setUsers(users.map((item) => (item.id === u.id ? { ...u, lastLoginAt: '刚刚' } : item)));
                 }}
+                onReplaceUsers={(serverUsers) => setUsers(serverUsers)}
               />
             )}
 

@@ -25,6 +25,7 @@ import { AIModelConfig, PromptTemplate, TrainingMission, MediaAsset } from '@/ty
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { extractJsonFromAIResponse } from '@/lib/utils';
+import { useStreamingText } from '@/hooks/useStreamingText';
 
 interface TrainingLmsDashboardProps {
   models: AIModelConfig[];
@@ -88,6 +89,7 @@ export function TrainingLmsDashboard({
   assets = [],
 }: TrainingLmsDashboardProps) {
   const { showToast } = useToast();
+  const { streamText, stopStream, isStreaming } = useStreamingText();
   const textModels = models.filter((m) => m.type === 'text');
   const [selectedModel, setSelectedModel] = useState<string>(textModels[0]?.id || 'minimax-text');
 
@@ -128,21 +130,16 @@ export function TrainingLmsDashboard({
       const promptContent = prompts.find((p) => p.id === 'lms-eval')?.content || '';
       const userPrompt = `实训关卡：【${activeMission.title}】。\n学员提交作业：\n${submissionText}\n请给出多维度打分与修改改进建议。`;
 
-      const res = await fetch('/api/ai/text', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          modelId: selectedModel,
-          systemPrompt: promptContent,
-          userPrompt,
-          customModels: models,
-        }),
+      // 流式生成
+      const fullText = await streamText({
+        modelId: selectedModel,
+        systemPrompt: promptContent,
+        userPrompt,
+        customModels: models,
       });
+      if (!fullText.trim()) throw new Error('模型未返回内容');
 
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || '评审失败');
-
-      const parsed = extractJsonFromAIResponse<any>(data.text, {
+      const parsed = extractJsonFromAIResponse<any>(fullText, {
         totalScore: 88,
         aiSummary: '整体结构符合实训标准，建议在钩子与变现闭环上继续加深打磨。',
         dimensions: [

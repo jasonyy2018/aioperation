@@ -19,6 +19,7 @@ import { useToast } from '@/components/ui/Toast';
 import { MediaAsset, AIModelConfig, PromptTemplate, GeneratedVideo } from '@/types';
 import { AIModelSelector } from '@/components/ui/AIModelSelector';
 import { safeJsonParse } from '@/lib/utils';
+import { useStreamingText } from '@/hooks/useStreamingText';
 
 interface VideoStudioProps {
   onSaveAsset?: (asset: MediaAsset) => void;
@@ -28,6 +29,7 @@ interface VideoStudioProps {
 
 export function VideoStudio({ onSaveAsset, models, prompts }: VideoStudioProps) {
   const { showToast } = useToast();
+  const { streamText, stopStream, isStreaming: textGenerating } = useStreamingText();
   const videoModels = models.filter((m) => m.type === 'video');
   const textModels = models.filter((m) => m.type === 'text');
 
@@ -125,23 +127,17 @@ export function VideoStudio({ onSaveAsset, models, prompts }: VideoStudioProps) 
       const activeTextModelId = defaultTextModel || textModels.find((m) => m.status === 'active')?.id || textModels[0]?.id || 'volcengine-plan';
       const vcSystemPrompt = prompts.find((p) => p.id === 'vc-system')?.content || '';
 
-      const res = await fetch('/api/ai/text', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          modelId: activeTextModelId,
-          systemPrompt: vcSystemPrompt || '你是一位顶级AI视频导演，擅长将简述转换为高质量视频运镜提示词，包含主体运动、镜头运镜、景深、光影氛围与影视级动效。',
-          userPrompt: `请将以下视频创意扩写为适合AI视频大模型的高质量运镜提示词（直接输出提示词内容）：${prompt}`,
-          customModels: models,
-        }),
+      // 流式生成
+      const fullText = await streamText({
+        modelId: activeTextModelId,
+        systemPrompt: vcSystemPrompt || '你是一位顶级AI视频导演，擅长将简述转换为高质量视频运镜提示词，包含主体运动、镜头运镜、景深、光影氛围与影视级动效。',
+        userPrompt: `请将以下视频创意扩写为适合AI视频大模型的高质量运镜提示词（直接输出提示词内容）：${prompt}`,
+        customModels: models,
       });
-      const data = await res.json();
-      if (res.ok && data.text) {
-        setPrompt(data.text.trim());
-        showToast('视频运镜提示词已完成智能优化！', 'success');
-      } else {
-        throw new Error(data.error || '优化失败');
-      }
+      if (!fullText.trim()) throw new Error('模型未返回内容');
+
+      setPrompt(fullText.trim());
+      showToast('视频运镜提示词已完成智能优化！', 'success');
     } catch (err: any) {
       showToast(err.message || '提示词润色失败，请检查大模型配置', 'error');
     } finally {

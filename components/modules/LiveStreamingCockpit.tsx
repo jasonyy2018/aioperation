@@ -20,6 +20,7 @@ import {
   Send,
 } from 'lucide-react';
 import { useToast } from '@/components/ui/Toast';
+import { useStreamingText } from '@/hooks/useStreamingText';
 import {
   AIModelConfig,
   PromptTemplate,
@@ -75,6 +76,7 @@ export function LiveStreamingCockpit({
   onSaveAsset,
 }: LiveStreamingCockpitProps) {
   const { showToast } = useToast();
+  const { streamText, stopStream, isStreaming } = useStreamingText();
   const textModels = models.filter((m) => m.type === 'text');
   const [selectedModel, setSelectedModel] = useState<string>(textModels[0]?.id || 'minimax-text');
 
@@ -121,21 +123,15 @@ export function LiveStreamingCockpit({
         )
         .join('\n')}\n请输出完整的7分钟自然流起号、开场留人、塑品与倒计时逼单话术。`;
 
-      const res = await fetch('/api/ai/text', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          modelId: selectedModel,
-          systemPrompt: promptContent,
-          userPrompt,
-          customModels: models,
-        }),
+      const fullText = await streamText({
+        modelId: selectedModel,
+        systemPrompt: promptContent,
+        userPrompt,
+        customModels: models,
       });
+      if (!fullText.trim()) throw new Error('模型未返回内容');
 
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || '生成话术失败');
-
-      setGeneratedScript(data.text);
+      setGeneratedScript(fullText);
       setActiveTab('script');
       showToast('直播全套话术剧本已生成！', 'success');
     } catch (err: any) {
@@ -156,24 +152,18 @@ export function LiveStreamingCockpit({
       const promptContent = prompts.find((p) => p.id === 'live-barrage')?.content || '';
       const userPrompt = `弹幕内容：“${barrageInput}”。直播主题：“${liveTheme}”。请分析意图并给出主播/副播可以直接脱口而出的高情商控场话术。`;
 
-      const res = await fetch('/api/ai/text', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          modelId: selectedModel,
-          systemPrompt: promptContent,
-          userPrompt,
-          customModels: models,
-        }),
+      const fullText = await streamText({
+        modelId: selectedModel,
+        systemPrompt: promptContent,
+        userPrompt,
+        customModels: models,
       });
+      if (!fullText.trim()) throw new Error('模型未返回内容');
 
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || '场控分析失败');
-
-      const parsed = extractJsonFromAIResponse<any>(data.text, {
+      const parsed = extractJsonFromAIResponse<any>(fullText, {
         intent: 'general',
         strategy: '真诚解答，引导互动',
-        recommendedReply: data.text || '感谢家人们的提问，咱们马上安排详细解答！',
+        recommendedReply: fullText || '感谢家人们的提问，咱们马上安排详细解答！',
       });
 
       const newLog: LiveBarrageLog = {
@@ -182,7 +172,7 @@ export function LiveStreamingCockpit({
         message: barrageInput,
         intent: parsed.intent || 'price',
         strategy: parsed.strategy || '',
-        recommendedReply: parsed.recommendedReply || parsed.reply || data.text,
+        recommendedReply: parsed.recommendedReply || parsed.reply || fullText,
         timestamp: new Date().toLocaleTimeString(),
       };
 

@@ -21,6 +21,7 @@ import { useToast } from '@/components/ui/Toast';
 import { AIModelConfig, PromptTemplate, MediaAsset, GeneratedImage } from '@/types';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
+import { useStreamingText } from '@/hooks/useStreamingText';
 
 interface CommercialPhotoStudioProps {
   models: AIModelConfig[];
@@ -73,6 +74,7 @@ export function CommercialPhotoStudio({
   onSaveAsset,
 }: CommercialPhotoStudioProps) {
   const { showToast } = useToast();
+  const { streamText } = useStreamingText();
   const imageModels = models.filter((m) => m.type === 'image');
   const textModels = models.filter((m) => m.type === 'text');
   const [selectedImageModel, setSelectedImageModel] = useState<string>(imageModels[0]?.id || 'minimax-image');
@@ -179,20 +181,15 @@ export function CommercialPhotoStudio({
       const promptContent = prompts.find((p) => p.id === 'photo-studio')?.content || '';
       const userPrompt = `老照片内容：【${oldPhotoDesc}】。\n请生成用于老照片高清修复重绘的高清Prompt与一段讲述老字号品牌的图生视频运镜Prompt。`;
 
-      const res = await fetch('/api/ai/text', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          modelId: selectedTextModel,
-          systemPrompt: promptContent,
-          userPrompt,
-          customModels: models,
-        }),
+      // 流式生成修复指令
+      const fullText = await streamText({
+        modelId: selectedTextModel,
+        systemPrompt: promptContent,
+        userPrompt,
+        customModels: models,
       });
-
-      const data = await res.json();
-      if (res.ok && data.text) {
-        setRestorePrompt(data.text);
+      if (fullText.trim()) {
+        setRestorePrompt(fullText);
         showToast('老照片修复与微短片指令已生成！', 'success');
       }
     } catch {

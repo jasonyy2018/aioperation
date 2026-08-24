@@ -14,6 +14,7 @@ import {
   MessageCircle,
 } from 'lucide-react';
 import { useToast } from '@/components/ui/Toast';
+import { useStreamingText } from '@/hooks/useStreamingText';
 import { AIModelConfig, PromptTemplate, SmartReplyResult } from '@/types';
 import { Badge } from '@/components/ui/Badge';
 import { extractJsonFromAIResponse } from '@/lib/utils';
@@ -44,6 +45,7 @@ const PRESET_TRICKY_COMMENTS = [
 
 export function SmartReply({ models, prompts }: SmartReplyProps) {
   const { showToast } = useToast();
+  const { streamText, stopStream, isStreaming } = useStreamingText();
   const [commentText, setCommentText] = useState<string>('');
   const [platform, setPlatform] = useState<string>('全平台通用');
   const textModels = models.filter((m) => m.type === 'text');
@@ -70,21 +72,15 @@ export function SmartReply({ models, prompts }: SmartReplyProps) {
       const replySystemPrompt = prompts.find((p) => p.id === 'reply-system')?.content || '';
       const userPrompt = `用户评论：“${commentText}”。\n平台环境：${platform}。\n请识别用户真实意图分类（必须为：咨询/夸赞/吐槽/广告/其他之一），并给出简短的心理应对策略分析，以及3~4条不同语气的高情商回复话术。请严格返回合法 JSON 格式：{"intent":"吐槽","analysis":"用户存在负面情绪与信任防线...","replies":["回复1","回复2","回复3"]}`;
 
-      const res = await fetch('/api/ai/text', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          modelId: selectedModel,
-          systemPrompt: replySystemPrompt,
-          userPrompt,
-          customModels: models,
-        }),
+      const fullText = await streamText({
+        modelId: selectedModel,
+        systemPrompt: replySystemPrompt,
+        userPrompt,
+        customModels: models,
       });
+      if (!fullText.trim()) throw new Error('模型未返回内容');
 
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || '生成回复失败');
-
-      const parsed = extractJsonFromAIResponse<SmartReplyResult | null>(data.text, null);
+      const parsed = extractJsonFromAIResponse<SmartReplyResult | null>(fullText, null);
       if (!parsed || !parsed.replies || parsed.replies.length === 0) {
         throw new Error('未能正确解析回复方案');
       }

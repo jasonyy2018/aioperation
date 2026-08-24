@@ -45,7 +45,7 @@ export function ModelManager({
   const { showToast } = useToast();
   const [filterType, setFilterType] = useState<string>('all');
   const [testingId, setTestingId] = useState<string | null>(null);
-  const [testResults, setTestResults] = useState<Record<string, { success: boolean; message: string }>>({});
+  const [testResults, setTestResults] = useState<Record<string, { success: boolean; message: string; testedAt?: string }>>({});
   const [editingModel, setEditingModel] = useState<AIModelConfig | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
 
@@ -84,6 +84,23 @@ export function ModelManager({
     return m.type === filterType;
   });
 
+  /** 从上游错误信息中提取可读的中文提示 */
+  const humanizeTestError = (raw: string): string => {
+    if (/InvalidSubscription|subscription has expired|not support model/i.test(raw)) {
+      return '⚠️ 套餐已过期或不支持该模型 — 请到服务商控制台续费或更换模型';
+    }
+    if (/401|Unauthorized|invalid.*api.?key/i.test(raw)) {
+      return '🔑 API Key 无效或已失效 — 请检查 Key 是否正确';
+    }
+    if (/429|rate.?limit|Too Many Requests/i.test(raw)) {
+      return '⏱️ 触发限流 — 请稍后重试或降低调用频率';
+    }
+    if (/ENOTFOUND|ECONNREFUSED|fetch failed|timeout/i.test(raw)) {
+      return '🌐 无法连接到服务端 — 请检查 Base URL 与网络';
+    }
+    return raw.slice(0, 120);
+  };
+
   const handleTestConnection = async (model: AIModelConfig) => {
     setTestingId(model.id);
     try {
@@ -93,19 +110,28 @@ export function ModelManager({
         body: JSON.stringify({ model }),
       });
       const data = await res.json();
+      const testedAt = new Date().toLocaleTimeString('zh-CN', { hour12: false });
       setTestResults((prev) => ({
         ...prev,
-        [model.id]: { success: data.success, message: data.message },
+        [model.id]: {
+          success: data.success,
+          message: data.success ? data.message : humanizeTestError(data.message || ''),
+          testedAt,
+        },
       }));
       if (data.success) {
         showToast(`${model.name} ${data.message}`, 'success');
       } else {
-        showToast(`${model.name} ${data.message}`, 'warning');
+        showToast(`${model.name} 连接异常`, 'warning');
       }
     } catch (err: any) {
       setTestResults((prev) => ({
         ...prev,
-        [model.id]: { success: false, message: err.message || '网络连接异常' },
+        [model.id]: {
+          success: false,
+          message: humanizeTestError(err.message || '网络连接异常'),
+          testedAt: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+        },
       }));
       showToast('连接测试异常', 'error');
     } finally {
@@ -368,18 +394,23 @@ export function ModelManager({
 
                 {testRes && (
                   <div
-                    className={`p-2 rounded-lg text-xs font-medium mb-3 flex items-center gap-1.5 ${
+                    className={`p-2 rounded-lg text-xs font-medium mb-3 space-y-1 ${
                       testRes.success
                         ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                         : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
                     }`}
                   >
-                    {testRes.success ? (
-                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                    ) : (
-                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    <div className="flex items-center gap-1.5">
+                      {testRes.success ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                      ) : (
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                      )}
+                      <span className="truncate">{testRes.message}</span>
+                    </div>
+                    {testRes.testedAt && (
+                      <p className="text-[9px] opacity-60 pl-5">检测时间: {testRes.testedAt}</p>
                     )}
-                    <span className="truncate">{testRes.message}</span>
                   </div>
                 )}
               </div>

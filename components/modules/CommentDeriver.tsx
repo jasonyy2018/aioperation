@@ -11,6 +11,7 @@ import {
   Flame,
 } from 'lucide-react';
 import { useToast } from '@/components/ui/Toast';
+import { useStreamingText } from '@/hooks/useStreamingText';
 import { MediaAsset, AIModelConfig, PromptTemplate, DerivedComment } from '@/types';
 import { extractJsonFromAIResponse } from '@/lib/utils';
 
@@ -41,6 +42,7 @@ const PRESET_COMMENTS = [
 
 export function CommentDeriver({ onSaveAsset, models, prompts }: CommentDeriverProps) {
   const { showToast } = useToast();
+  const { streamText, stopStream, isStreaming } = useStreamingText();
   const [baseComment, setBaseComment] = useState<string>('');
   const [count, setCount] = useState<number>(5);
   const [angle, setAngle] = useState<string>('神评引流');
@@ -68,21 +70,15 @@ export function CommentDeriver({ onSaveAsset, models, prompts }: CommentDeriverP
       const commentSystemPrompt = prompts.find((p) => p.id === 'comment-derive')?.content || '';
       const userPrompt = `基础评论：“${baseComment}”。\n请衍生 ${count} 条风格不同、意图聚焦于【${angle}】的高互动自媒体评论。请严格以 JSON 数组格式返回，格式为：[{"text":"评论内容","angle":"具体角度"}]`;
 
-      const res = await fetch('/api/ai/text', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          modelId: selectedModel,
-          systemPrompt: commentSystemPrompt,
-          userPrompt,
-          customModels: models,
-        }),
+      const fullText = await streamText({
+        modelId: selectedModel,
+        systemPrompt: commentSystemPrompt,
+        userPrompt,
+        customModels: models,
       });
+      if (!fullText.trim()) throw new Error('模型未返回内容');
 
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || '衍生评论失败');
-
-      const rawParsed = extractJsonFromAIResponse<any[]>(data.text, []);
+      const rawParsed = extractJsonFromAIResponse<any[]>(fullText, []);
       if (!rawParsed || !Array.isArray(rawParsed) || rawParsed.length === 0) {
         throw new Error('未能正确解析衍生评论数据');
       }
