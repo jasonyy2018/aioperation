@@ -21,9 +21,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '请求过于频繁' }, { status: 429 });
   }
 
-  ensureSeed();
-
   try {
+    // 数据库初始化/播种失败会在此被捕获并返回可读错误（而非 HTML 错误页）
+    ensureSeed();
+
     let body: any;
     try {
       body = await req.json();
@@ -58,9 +59,12 @@ export async function POST(req: NextRequest) {
       path: '/',
     });
     return res;
-  } catch (err) {
+  } catch (err: any) {
     console.error('[API /api/auth/login] Error:', err);
-    return NextResponse.json({ success: false, message: '登录失败，请稍后重试' }, { status: 500 });
+    const detail = process.env.NODE_ENV === 'production'
+      ? `服务内部错误: ${(err?.message || '未知').slice(0, 150)}`
+      : String(err?.message || err);
+    return NextResponse.json({ success: false, message: detail }, { status: 500 });
   }
 }
 

@@ -91,19 +91,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username, password }),
         });
-        const data = await res.json();
+        // 无论状态码如何，先尝试解析 JSON 拿到服务端返回的真实错误信息
+        let data: any = null;
+        try {
+          data = await res.json();
+        } catch {
+          // 响应不是 JSON（如网关 502 HTML 错误页）
+          return { success: false, message: `服务异常 (HTTP ${res.status})，请查看服务器日志` };
+        }
+        if (!data) {
+          return { success: false, message: `服务异常 (HTTP ${res.status})` };
+        }
 
         if (data.success && data.user) {
-          // Fetch fresh user info via /me to normalize shape
           setState({
             user: adaptUser(data.user),
             isLoggedIn: true,
             isLoading: false,
           });
         }
-        return { success: !!data.success, message: data.message || '' };
+        return { success: !!data.success, message: data.message || data.error || '' };
       } catch {
-        return { success: false, message: '网络错误，请稍后重试' };
+        // fetch 本身抛错 = 请求根本没到达服务器
+        return { success: false, message: '无法连接到服务器，请检查服务是否运行中' };
       }
     },
     []

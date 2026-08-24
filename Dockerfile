@@ -47,6 +47,12 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
+# better-sqlite3 原生二进制：standalone 追踪有时会遗漏 .node 文件，显式补拷
+# (若 standalone 已包含则覆盖为相同内容，无副作用)
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/better-sqlite3 ./node_modules/better-sqlite3
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/bindings ./node_modules/bindings
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/file-uri-to-path ./node_modules/file-uri-to-path
+
 # Health check - API health endpoint
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:8765/api/health || exit 1
