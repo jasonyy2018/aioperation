@@ -1,6 +1,7 @@
 # Stage 1: Install dependencies
 FROM node:22-alpine AS deps
-RUN apk add --no-cache libc6-compat git
+# better-sqlite3 是原生模块，Alpine(musl) 无预编译产物，需 python3/make/g++ 现场编译
+RUN apk add --no-cache libc6-compat python3 make g++
 WORKDIR /app
 
 # Copy package files first for layer caching
@@ -36,6 +37,10 @@ ENV HOSTNAME="0.0.0.0"
 # Create non-root user for security
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
+
+# 数据目录：预建并授权给 nextjs 用户（SQLite 数据库存储位置）
+# 使用绑定挂载时，宿主机需保证该目录对 uid 1001 可写: chown -R 1001:1001 ./data
+RUN mkdir -p /app/data && chown -R nextjs:nodejs /app/data
 
 # Copy standalone output
 COPY --from=builder /app/public ./public
