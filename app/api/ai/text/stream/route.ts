@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { getModelConfig, resolveChatUrl } from '@/lib/services/ai-clients';
 import { AIModelConfig } from '@/types';
-import { checkRateLimit } from '@/lib/middleware';
+import { checkAIRateLimit } from '@/lib/middleware';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
@@ -22,7 +22,7 @@ function getClientIp(req: NextRequest): string {
  */
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
-  if (!checkRateLimit(ip)) {
+  if (!checkAIRateLimit(ip)) {
     return new Response(JSON.stringify({ error: '请求过于频繁' }), {
       status: 429,
       headers: { 'Content-Type': 'application/json' },

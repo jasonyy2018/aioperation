@@ -15,6 +15,21 @@ function getClientIp(req: NextRequest): string {
   );
 }
 
+/**
+ * 判断请求是否走 HTTPS（支持反向代理场景）
+ * - 直连: request.protocol
+ * - Nginx/Caddy 反代: x-forwarded-proto 头
+ */
+function isHttps(req: NextRequest): boolean {
+  const proto = req.headers.get('x-forwarded-proto') || '';
+  if (proto) return proto.split(',')[0].trim() === 'https';
+  try {
+    return new URL(req.url).protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
   if (!checkRateLimit(ip)) {
@@ -51,10 +66,12 @@ export async function POST(req: NextRequest) {
       message: result.message,
       user: result.user,
     });
+    const secure = isHttps(req);
     res.cookies.set(SESSION_COOKIE, result.token || '', {
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      // HTTPS 下必须 secure，HTTP 直连下不能设（否则 Cookie 不被保存）
+      secure,
       maxAge: 7 * 24 * 3600,
       path: '/',
     });
@@ -77,7 +94,7 @@ export async function DELETE(req: NextRequest) {
   res.cookies.set(SESSION_COOKIE, '', {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: isHttps(req),
     maxAge: 0,
     path: '/',
   });

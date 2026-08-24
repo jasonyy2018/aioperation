@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { queryVideoAI } from '@/lib/services/ai-clients';
-import { checkRateLimit } from '@/lib/middleware';
+import { checkAIRateLimit } from '@/lib/middleware';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -15,7 +15,7 @@ function getClientIp(req: NextRequest): string {
 
 export async function GET(req: NextRequest) {
   const ip = getClientIp(req);
-  if (!checkRateLimit(ip)) {
+  if (!checkAIRateLimit(ip)) {
     return NextResponse.json(
       { error: '请求过于频繁，请稍后再试' },
       { status: 429 }
