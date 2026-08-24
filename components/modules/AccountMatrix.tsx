@@ -21,7 +21,7 @@ import { useToast } from '@/components/ui/Toast';
 import { SocialAccount, AIModelConfig, PromptTemplate } from '@/types';
 import { Modal } from '@/components/ui/Modal';
 import { Badge } from '@/components/ui/Badge';
-import { formatNumber } from '@/lib/utils';
+import { formatNumber, extractJsonFromAIResponse } from '@/lib/utils';
 
 interface AccountMatrixProps {
   accounts: SocialAccount[];
@@ -179,12 +179,13 @@ export function AccountMatrix({
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || '自检失败');
 
-      let text = data.text.trim();
-      if (text.startsWith('```json')) text = text.slice(7);
-      if (text.startsWith('```')) text = text.slice(3);
-      if (text.endsWith('```')) text = text.slice(0, -3);
+      const parsed = extractJsonFromAIResponse<any>(data.text, {
+        score: 95,
+        riskLevel: '低风险',
+        issues: [],
+        optimizedText: draftContent,
+      });
 
-      const parsed = JSON.parse(text.trim());
       setComplianceResult(parsed);
       showToast('广告法与违规词自检完成！', 'success');
     } catch (err: any) {

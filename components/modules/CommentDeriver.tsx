@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/components/ui/Toast';
 import { MediaAsset, AIModelConfig, PromptTemplate, DerivedComment } from '@/types';
+import { extractJsonFromAIResponse } from '@/lib/utils';
 
 interface CommentDeriverProps {
   onSaveAsset?: (asset: MediaAsset) => void;
@@ -81,14 +82,14 @@ export function CommentDeriver({ onSaveAsset, models, prompts }: CommentDeriverP
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || '衍生评论失败');
 
-      let text = data.text.trim();
-      if (text.startsWith('```json')) text = text.slice(7);
-      if (text.startsWith('```')) text = text.slice(3);
-      if (text.endsWith('```')) text = text.slice(0, -3);
+      const rawParsed = extractJsonFromAIResponse<any[]>(data.text, []);
+      if (!rawParsed || !Array.isArray(rawParsed) || rawParsed.length === 0) {
+        throw new Error('未能正确解析衍生评论数据');
+      }
 
-      const parsed = JSON.parse(text.trim()).map((item: any, idx: number) => ({
+      const parsed = rawParsed.map((item: any, idx: number) => ({
         id: `comment_${Date.now()}_${idx}`,
-        text: item.text || item,
+        text: typeof item === 'string' ? item : item.text || JSON.stringify(item),
         angle: item.angle || angle,
       }));
 

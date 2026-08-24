@@ -17,6 +17,9 @@ import {
 import { useToast } from '@/components/ui/Toast';
 import { MediaAsset, AIModelConfig, PromptTemplate, VideoScriptData, ScriptScene } from '@/types';
 
+import { AIModelSelector } from '@/components/ui/AIModelSelector';
+import { safeJsonParse, extractJsonFromAIResponse } from '@/lib/utils';
+
 interface VideoScriptGeneratorProps {
   initialTheme?: string;
   initialSummary?: string;
@@ -37,21 +40,56 @@ export function VideoScriptGenerator({
   const [theme, setTheme] = useState(initialTheme);
   const [duration, setDuration] = useState('30s');
   const textModels = models.filter((m) => m.type === 'text');
-  const [selectedModel, setSelectedModel] = useState<string>(textModels[0]?.id || 'ark-text');
+  const [selectedModel, setSelectedModel] = useState<string>(textModels[0]?.id || 'volcengine-plan');
   const [loading, setLoading] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
   const [scenes, setScenes] = useState<ScriptScene[]>([]);
-  const [selectedBgm, setSelectedBgm] = useState<string>('轻快科技节奏');
+  const [selectedBgm, setSelectedBgm] = useState<string>('轻快科技节奏 (UP Beat Tech)');
+
+  // Restore draft on mount
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const saved = localStorage.getItem('automedia_draft_videoscript');
+        if (saved) {
+          const parsed = safeJsonParse<any>(saved, null);
+          if (parsed) {
+            if (!initialTheme && parsed.theme) setTheme(parsed.theme);
+            if (parsed.platform) setPlatform(parsed.platform);
+            if (parsed.duration) setDuration(parsed.duration);
+            if (parsed.selectedBgm) setSelectedBgm(parsed.selectedBgm);
+            if (parsed.scenes && Array.isArray(parsed.scenes)) setScenes(parsed.scenes);
+          }
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  // Sync draft to LocalStorage
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(
+          'automedia_draft_videoscript',
+          JSON.stringify({
+            theme,
+            platform,
+            duration,
+            selectedBgm,
+            scenes,
+          })
+        );
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, [theme, platform, duration, selectedBgm, scenes]);
 
   useEffect(() => {
     if (initialTheme) setTheme(initialTheme);
   }, [initialTheme]);
-
-  useEffect(() => {
-    if (textModels.length > 0 && !textModels.some((m) => m.id === selectedModel)) {
-      setSelectedModel(textModels[0].id);
-    }
-  }, [models]);
 
   const platformList = [
     { id: 'douyin', name: '抖音爆款', promptId: 'video-douyin', badge: '强反转' },
@@ -106,13 +144,12 @@ export function VideoScriptGenerator({
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || '生成分镜失败');
 
-      // Parse JSON from returned text
-      let text = data.text.trim();
-      if (text.startsWith('```json')) text = text.slice(7);
-      if (text.startsWith('```')) text = text.slice(3);
-      if (text.endsWith('```')) text = text.slice(0, -3);
+      const rawParsed = extractJsonFromAIResponse<any[]>(data.text, []);
+      if (!rawParsed || !Array.isArray(rawParsed) || rawParsed.length === 0) {
+        throw new Error('未能正确解析分镜数据');
+      }
 
-      const parsed: ScriptScene[] = JSON.parse(text.trim()).map((s: any, idx: number) => ({
+      const parsed: ScriptScene[] = rawParsed.map((s: any, idx: number) => ({
         id: `scene-${idx + 1}`,
         timeRange: s.timeRange || `00:${idx * 5}-00:${(idx + 1) * 5}`,
         sceneDescription: s.sceneDescription || '',
@@ -237,23 +274,15 @@ export function VideoScriptGenerator({
             </select>
           </div>
 
-          {/* Model */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-300">分镜生成模型</label>
-            <select
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-pink-500"
-            >
-              {models
-                .filter((m) => m.type === 'text')
-                .map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-            </select>
-          </div>
+          {/* Model Selector with Set As Default */}
+          <AIModelSelector
+            models={models}
+            selectedModel={selectedModel}
+            onSelectModel={setSelectedModel}
+            type="text"
+            moduleKey="video_script"
+            label="分镜生成模型"
+          />
 
           {/* BGM recommendation */}
           <div className="space-y-1.5">

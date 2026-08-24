@@ -27,6 +27,9 @@ import {
 } from '@/types';
 import { Badge } from '@/components/ui/Badge';
 
+import { AIModelSelector } from '@/components/ui/AIModelSelector';
+import { safeJsonParse, extractJsonFromAIResponse } from '@/lib/utils';
+
 interface ComicStoryboardStudioProps {
   models: AIModelConfig[];
   prompts: PromptTemplate[];
@@ -45,7 +48,7 @@ export function ComicStoryboardStudio({
   const { showToast } = useToast();
   const textModels = models.filter((m) => m.type === 'text');
   const imageModels = models.filter((m) => m.type === 'image');
-  const [selectedTextModel, setSelectedTextModel] = useState<string>(textModels[0]?.id || 'minimax-text');
+  const [selectedTextModel, setSelectedTextModel] = useState<string>(textModels[0]?.id || 'volcengine-plan');
   const [selectedImageModel, setSelectedImageModel] = useState<string>(imageModels[0]?.id || 'minimax-image');
 
   const [activeTab, setActiveTab] = useState<'cards' | 'threeviews'>('cards');
@@ -68,18 +71,54 @@ export function ComicStoryboardStudio({
 
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
+  // Restore draft on mount
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const saved = localStorage.getItem('automedia_draft_comic');
+        if (saved) {
+          const parsed = safeJsonParse<any>(saved, null);
+          if (parsed) {
+            if (parsed.theme) setTheme(parsed.theme);
+            if (parsed.productSellingPoint) setProductSellingPoint(parsed.productSellingPoint);
+            if (parsed.cards && Array.isArray(parsed.cards)) setCards(parsed.cards);
+            if (parsed.charName) setCharName(parsed.charName);
+            if (parsed.charStyle) setCharStyle(parsed.charStyle);
+            if (parsed.charFeatures) setCharFeatures(parsed.charFeatures);
+            if (parsed.threeViewsData) setThreeViewsData(parsed.threeViewsData);
+          }
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  // Sync draft to LocalStorage
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(
+          'automedia_draft_comic',
+          JSON.stringify({
+            theme,
+            productSellingPoint,
+            cards,
+            charName,
+            charStyle,
+            charFeatures,
+            threeViewsData,
+          })
+        );
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, [theme, productSellingPoint, cards, charName, charStyle, charFeatures, threeViewsData]);
+
   useEffect(() => {
     if (initialTheme) setTheme(initialTheme);
   }, [initialTheme]);
-
-  useEffect(() => {
-    if (textModels.length > 0 && !textModels.some((m) => m.id === selectedTextModel)) {
-      setSelectedTextModel(textModels[0].id);
-    }
-    if (imageModels.length > 0 && !imageModels.some((m) => m.id === selectedImageModel)) {
-      setSelectedImageModel(imageModels[0].id);
-    }
-  }, [models]);
 
   // Handle Comic Storyboard Generation
   const handleGenerateCards = async () => {
@@ -106,12 +145,11 @@ export function ComicStoryboardStudio({
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || '生成漫剧分镜失败');
 
-      let text = data.text.trim();
-      if (text.startsWith('```json')) text = text.slice(7);
-      if (text.startsWith('```')) text = text.slice(3);
-      if (text.endsWith('```')) text = text.slice(0, -3);
+      const parsed = extractJsonFromAIResponse<ComicSceneCard[]>(data.text, []);
+      if (!parsed || parsed.length === 0) {
+        throw new Error('未能正确解析漫剧分镜，请重试');
+      }
 
-      const parsed: ComicSceneCard[] = JSON.parse(text.trim());
       setCards(parsed);
       setActiveCardIdx(0);
       showToast('AI 漫剧 4 阶段分镜卡片流已生成！', 'success');
@@ -140,18 +178,15 @@ export function ComicStoryboardStudio({
         }),
       });
       const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || '生图失败');
+      if (!res.ok || data.error) throw new Error(data.error || '分镜生图失败');
       if (data.images && data.images.length > 0) {
-        const updated = [...cards];
-        updated[cardIdx] = {
-          ...updated[cardIdx],
-          renderedImageUrl: data.images[0],
-        };
-        setCards(updated);
-        showToast(`第 ${cardIdx + 1} 幕分镜画面已原地渲染成功！`, 'success');
+        setCards((prev) =>
+          prev.map((c, i) => (i === cardIdx ? { ...c, renderedImageUrl: data.images[0] } : c))
+        );
+        showToast(`第 ${cardIdx + 1} 幕分镜生图渲染完成！`, 'success');
       }
     } catch (err: any) {
-      showToast(err.message || '渲染分镜画面失败', 'error');
+      showToast(err.message || '分镜生图异常', 'error');
     } finally {
       setRenderingCardIdx(null);
     }
@@ -160,13 +195,13 @@ export function ComicStoryboardStudio({
   // Handle Three Views Generation
   const handleGenerateThreeViews = async () => {
     if (!charName.trim()) {
-      showToast('请输入角色或老字号商品名称', 'warning');
+      showToast('请输入主体名称', 'warning');
       return;
     }
     setLoadingThreeViews(true);
     try {
-      const promptContent = prompts.find((p) => p.id === 'three-views-visual')?.content || '';
-      const userPrompt = `角色/商品：【${charName}】。\n视觉风格：【${charStyle}】。\n核心特征：【${charFeatures}】。\n请生成正面、侧面、背面三视图的高清生图Prompt与锁特征Seed建议。`;
+      const promptContent = prompts.find((p) => p.id === 'comic-threeviews')?.content || '';
+      const userPrompt = `主体名称：【${charName}】\n视觉风格：【${charStyle}】\n特征细节与服饰道具：【${charFeatures}】\n请严格按JSON结构输出三视图Prompt方案。`;
 
       const res = await fetch('/api/ai/text', {
         method: 'POST',
@@ -182,12 +217,11 @@ export function ComicStoryboardStudio({
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || '生成三视图提示词失败');
 
-      let text = data.text.trim();
-      if (text.startsWith('```json')) text = text.slice(7);
-      if (text.startsWith('```')) text = text.slice(3);
-      if (text.endsWith('```')) text = text.slice(0, -3);
+      const parsed = extractJsonFromAIResponse<ThreeViewsAsset | null>(data.text, null);
+      if (!parsed) {
+        throw new Error('未能正确解析三视图提示词数据');
+      }
 
-      const parsed: ThreeViewsAsset = JSON.parse(text.trim());
       setThreeViewsData(parsed);
       showToast('三视图一致性视觉指令已生成！', 'success');
     } catch (err: any) {
@@ -262,34 +296,26 @@ export function ComicStoryboardStudio({
           </button>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-400">文案模型:</span>
-            <select
-              value={selectedTextModel}
-              onChange={(e) => setSelectedTextModel(e.target.value)}
-              className="bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-purple-500"
-            >
-              {textModels.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
+          <div className="w-full sm:w-48">
+            <AIModelSelector
+              models={models}
+              selectedModel={selectedTextModel}
+              onSelectModel={setSelectedTextModel}
+              type="text"
+              moduleKey="comic_text"
+              label="漫剧剧本模型"
+            />
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-400">渲染生图模型:</span>
-            <select
-              value={selectedImageModel}
-              onChange={(e) => setSelectedImageModel(e.target.value)}
-              className="bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
-            >
-              {imageModels.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
+          <div className="w-full sm:w-48">
+            <AIModelSelector
+              models={models}
+              selectedModel={selectedImageModel}
+              onSelectModel={setSelectedImageModel}
+              type="image"
+              moduleKey="comic_image"
+              label="分镜渲染模型"
+            />
           </div>
         </div>
       </div>

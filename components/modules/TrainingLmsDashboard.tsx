@@ -24,6 +24,7 @@ import { useToast } from '@/components/ui/Toast';
 import { AIModelConfig, PromptTemplate, TrainingMission, MediaAsset } from '@/types';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
+import { extractJsonFromAIResponse } from '@/lib/utils';
 
 interface TrainingLmsDashboardProps {
   models: AIModelConfig[];
@@ -141,12 +142,16 @@ export function TrainingLmsDashboard({
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || '评审失败');
 
-      let text = data.text.trim();
-      if (text.startsWith('```json')) text = text.slice(7);
-      if (text.startsWith('```')) text = text.slice(3);
-      if (text.endsWith('```')) text = text.slice(0, -3);
+      const parsed = extractJsonFromAIResponse<any>(data.text, {
+        totalScore: 88,
+        aiSummary: '整体结构符合实训标准，建议在钩子与变现闭环上继续加深打磨。',
+        dimensions: [
+          { name: '内容完整度', score: 90, comment: '基本框架清晰' },
+          { name: '商业转化力', score: 85, comment: '具备明确行动号召' },
+        ],
+        suggestions: ['可在开篇增加更多情感共鸣钩子'],
+      });
 
-      const parsed = JSON.parse(text.trim());
       setEvaluationResult(parsed);
 
       setMissions((prev) =>

@@ -16,6 +16,7 @@ import {
 import { useToast } from '@/components/ui/Toast';
 import { AIModelConfig, PromptTemplate, SmartReplyResult } from '@/types';
 import { Badge } from '@/components/ui/Badge';
+import { extractJsonFromAIResponse } from '@/lib/utils';
 
 interface SmartReplyProps {
   models: AIModelConfig[];
@@ -83,14 +84,13 @@ export function SmartReply({ models, prompts }: SmartReplyProps) {
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || '生成回复失败');
 
-      let text = data.text.trim();
-      if (text.startsWith('```json')) text = text.slice(7);
-      if (text.startsWith('```')) text = text.slice(3);
-      if (text.endsWith('```')) text = text.slice(0, -3);
+      const parsed = extractJsonFromAIResponse<SmartReplyResult | null>(data.text, null);
+      if (!parsed || !parsed.replies || parsed.replies.length === 0) {
+        throw new Error('未能正确解析回复方案');
+      }
 
-      const parsed: SmartReplyResult = JSON.parse(text.trim());
       setResult(parsed);
-      showToast(`已成功识别意图【${parsed.intent}】并生成高情商回复！`, 'success');
+      showToast(`已成功识别意图【${parsed.intent || '智能回复'}】并生成高情商回复！`, 'success');
     } catch (err: any) {
       // Fallback
       setResult({

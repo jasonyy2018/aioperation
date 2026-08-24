@@ -103,6 +103,7 @@ export interface MediaAsset {
   type: 'article' | 'script' | 'image' | 'video' | 'comment' | 'mandala' | 'comic' | 'photo' | 'live';
   content: string;
   mediaUrl?: string;
+  url?: string;
   tags: string[];
   platform?: string;
   createdAt: string;

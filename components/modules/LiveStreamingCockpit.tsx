@@ -28,6 +28,7 @@ import {
   LiveBarrageLog,
 } from '@/types';
 import { Badge } from '@/components/ui/Badge';
+import { extractJsonFromAIResponse } from '@/lib/utils';
 
 interface LiveStreamingCockpitProps {
   models: AIModelConfig[];
@@ -169,19 +170,19 @@ export function LiveStreamingCockpit({
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || '场控分析失败');
 
-      let text = data.text.trim();
-      if (text.startsWith('```json')) text = text.slice(7);
-      if (text.startsWith('```')) text = text.slice(3);
-      if (text.endsWith('```')) text = text.slice(0, -3);
+      const parsed = extractJsonFromAIResponse<any>(data.text, {
+        intent: 'general',
+        strategy: '真诚解答，引导互动',
+        recommendedReply: data.text || '感谢家人们的提问，咱们马上安排详细解答！',
+      });
 
-      const parsed = JSON.parse(text.trim());
       const newLog: LiveBarrageLog = {
         id: `barrage_${Date.now()}`,
         user: `观众_${Math.random().toString(36).slice(2, 6)}`,
         message: barrageInput,
         intent: parsed.intent || 'price',
         strategy: parsed.strategy || '',
-        recommendedReply: parsed.recommendedReply || parsed.reply || '',
+        recommendedReply: parsed.recommendedReply || parsed.reply || data.text,
         timestamp: new Date().toLocaleTimeString(),
       };
 

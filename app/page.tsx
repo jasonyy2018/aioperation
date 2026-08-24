@@ -183,11 +183,13 @@ export default function HomePage() {
     );
   }
 
-  // Render modules with error boundaries
+  // Render modules with error boundaries and keep state persistent in DOM
   const renderModule = (tab: NavTabId, children: React.ReactNode) => (
-    <ModuleErrorBoundary moduleName={TAB_CONFIG[tab]?.errorName}>
-      {children}
-    </ModuleErrorBoundary>
+    <div key={tab} className={activeTab === tab ? 'block' : 'hidden'}>
+      <ModuleErrorBoundary moduleName={TAB_CONFIG[tab]?.errorName || tab}>
+        {children}
+      </ModuleErrorBoundary>
+    </div>
   );
 
   return (
@@ -214,7 +216,7 @@ export default function HomePage() {
 
         <main className="flex-1 overflow-y-auto p-8 scrollbar-thin">
           <div className="max-w-7xl mx-auto pb-12">
-            {activeTab === 'users' && renderModule('users',
+            {renderModule('users',
               <UserManager
                 users={users}
                 currentUser={currentUser}
@@ -241,7 +243,7 @@ export default function HomePage() {
               />
             )}
 
-            {activeTab === 'mandala' && renderModule('mandala',
+            {renderModule('mandala',
               <MandalaTopicPlanner
                 models={models}
                 prompts={prompts}
@@ -251,7 +253,7 @@ export default function HomePage() {
               />
             )}
 
-            {activeTab === 'comic' && renderModule('comic',
+            {renderModule('comic',
               <ComicStoryboardStudio
                 models={models}
                 prompts={prompts}
@@ -261,7 +263,7 @@ export default function HomePage() {
               />
             )}
 
-            {activeTab === 'photo' && renderModule('photo',
+            {renderModule('photo',
               <CommercialPhotoStudio
                 models={models}
                 prompts={prompts}
@@ -269,7 +271,7 @@ export default function HomePage() {
               />
             )}
 
-            {activeTab === 'live' && renderModule('live',
+            {renderModule('live',
               <LiveStreamingCockpit
                 models={models}
                 prompts={prompts}
@@ -277,18 +279,18 @@ export default function HomePage() {
               />
             )}
 
-            {activeTab === 'training' && renderModule('training',
+            {renderModule('training',
               <TrainingLmsDashboard models={models} prompts={prompts} assets={assets} />
             )}
 
-            {activeTab === 'hotspot' && renderModule('hotspot',
+            {renderModule('hotspot',
               <HotspotDiscovery
                 onQuickGenerateArticle={handleQuickArticle}
                 onQuickGenerateVideo={handleQuickVideo}
               />
             )}
 
-            {activeTab === 'article' && renderModule('article',
+            {renderModule('article',
               <ArticleGenerator
                 initialTopic={articlePrefill.topic}
                 initialSummary={articlePrefill.summary}
@@ -298,7 +300,7 @@ export default function HomePage() {
               />
             )}
 
-            {activeTab === 'video' && renderModule('video',
+            {renderModule('video',
               <VideoScriptGenerator
                 initialTheme={videoPrefill.theme}
                 initialSummary={videoPrefill.summary}
@@ -308,23 +310,23 @@ export default function HomePage() {
               />
             )}
 
-            {activeTab === 'image' && renderModule('image',
+            {renderModule('image',
               <ImageStudio onSaveAsset={handleSaveAsset} models={models} prompts={prompts} />
             )}
 
-            {activeTab === 'video-create' && renderModule('video-create',
+            {renderModule('video-create',
               <VideoStudio onSaveAsset={handleSaveAsset} models={models} prompts={prompts} />
             )}
 
-            {activeTab === 'comment' && renderModule('comment',
+            {renderModule('comment',
               <CommentDeriver onSaveAsset={handleSaveAsset} models={models} prompts={prompts} />
             )}
 
-            {activeTab === 'smart-reply' && renderModule('smart-reply',
+            {renderModule('smart-reply',
               <SmartReply models={models} prompts={prompts} />
             )}
 
-            {activeTab === 'accounts' && renderModule('accounts',
+            {renderModule('accounts',
               <AccountMatrix
                 accounts={accounts}
                 onAddAccount={(acc) => updateAccounts([acc, ...accounts])}
@@ -337,7 +339,7 @@ export default function HomePage() {
               />
             )}
 
-            {activeTab === 'assets' && renderModule('assets',
+            {renderModule('assets',
               <AssetLibrary
                 assets={assets}
                 onDeleteAsset={(id) => updateAssets(assets.filter((a) => a.id !== id))}
@@ -345,9 +347,9 @@ export default function HomePage() {
               />
             )}
 
-            {activeTab === 'ip-stats' && renderModule('ip-stats', <VisitorAnalytics />)}
+            {renderModule('ip-stats', <VisitorAnalytics />)}
 
-            {activeTab === 'prompts' && renderModule('prompts',
+            {renderModule('prompts',
               <PromptManager
                 prompts={prompts}
                 onUpdatePrompt={(prompt) => updatePrompts(prompts.map((p) => (p.id === prompt.id ? prompt : p)))}
@@ -357,7 +359,7 @@ export default function HomePage() {
               />
             )}
 
-            {activeTab === 'models' && renderModule('models',
+            {renderModule('models',
               <ModelManager
                 models={models}
                 onUpdateModel={(model) => updateModels(models.map((m) => (m.id === model.id ? model : m)))}

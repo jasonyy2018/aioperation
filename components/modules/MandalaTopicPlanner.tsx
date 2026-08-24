@@ -22,6 +22,9 @@ import { useToast } from '@/components/ui/Toast';
 import { AIModelConfig, PromptTemplate, MediaAsset, MandalaDimension, AccountProfileSet } from '@/types';
 import { Badge } from '@/components/ui/Badge';
 
+import { AIModelSelector } from '@/components/ui/AIModelSelector';
+import { safeJsonParse, extractJsonFromAIResponse } from '@/lib/utils';
+
 interface MandalaTopicPlannerProps {
   models: AIModelConfig[];
   prompts: PromptTemplate[];
@@ -39,7 +42,7 @@ export function MandalaTopicPlanner({
 }: MandalaTopicPlannerProps) {
   const { showToast } = useToast();
   const textModels = models.filter((m) => m.type === 'text');
-  const [selectedModel, setSelectedModel] = useState<string>(textModels[0]?.id || 'minimax-text');
+  const [selectedModel, setSelectedModel] = useState<string>(textModels[0]?.id || 'volcengine-plan');
   const [activeSubTab, setActiveSubTab] = useState<'mandala' | 'profile' | 'cases'>('mandala');
 
   // Mandala state
@@ -55,11 +58,46 @@ export function MandalaTopicPlanner({
   const [profileResult, setProfileResult] = useState<AccountProfileSet | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
+  // Restore draft on mount
   useEffect(() => {
-    if (textModels.length > 0 && !textModels.some((m) => m.id === selectedModel)) {
-      setSelectedModel(textModels[0].id);
+    try {
+      if (typeof window !== 'undefined') {
+        const saved = localStorage.getItem('automedia_draft_mandala');
+        if (saved) {
+          const parsed = safeJsonParse<any>(saved, null);
+          if (parsed) {
+            if (parsed.coreKeyword) setCoreKeyword(parsed.coreKeyword);
+            if (parsed.dimensions && Array.isArray(parsed.dimensions)) setDimensions(parsed.dimensions);
+            if (parsed.industry) setIndustry(parsed.industry);
+            if (parsed.ipType) setIpType(parsed.ipType);
+            if (parsed.profileResult) setProfileResult(parsed.profileResult);
+          }
+        }
+      }
+    } catch (e) {
+      console.error(e);
     }
-  }, [models]);
+  }, []);
+
+  // Sync draft to LocalStorage
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(
+          'automedia_draft_mandala',
+          JSON.stringify({
+            coreKeyword,
+            dimensions,
+            industry,
+            ipType,
+            profileResult,
+          })
+        );
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, [coreKeyword, dimensions, industry, ipType, profileResult]);
 
   // Handle Mandala Generation
   const handleGenerateMandala = async () => {
@@ -86,12 +124,11 @@ export function MandalaTopicPlanner({
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || '生成失败');
 
-      let text = data.text.trim();
-      if (text.startsWith('```json')) text = text.slice(7);
-      if (text.startsWith('```')) text = text.slice(3);
-      if (text.endsWith('```')) text = text.slice(0, -3);
+      const parsed = extractJsonFromAIResponse<MandalaDimension[]>(data.text, []);
+      if (!parsed || parsed.length === 0) {
+        throw new Error('未能正确解析选题矩阵数据，请重试');
+      }
 
-      const parsed: MandalaDimension[] = JSON.parse(text.trim());
       setDimensions(parsed);
       if (parsed[0]?.topics?.[0]) {
         setSelectedTopic(parsed[0].topics[0]);
@@ -129,12 +166,11 @@ export function MandalaTopicPlanner({
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || '生成失败');
 
-      let text = data.text.trim();
-      if (text.startsWith('```json')) text = text.slice(7);
-      if (text.startsWith('```')) text = text.slice(3);
-      if (text.endsWith('```')) text = text.slice(0, -3);
+      const parsed = extractJsonFromAIResponse<AccountProfileSet | null>(data.text, null);
+      if (!parsed) {
+        throw new Error('未能正确解析人设数据，请重试');
+      }
 
-      const parsed: AccountProfileSet = JSON.parse(text.trim());
       setProfileResult(parsed);
       showToast('账号人设四件套生成成功！', 'success');
     } catch (err: any) {
@@ -191,19 +227,15 @@ export function MandalaTopicPlanner({
           </button>
         </div>
 
-        <div className="flex items-center gap-2 w-full md:w-auto">
-          <span className="text-xs text-slate-400 shrink-0">驱动模型:</span>
-          <select
-            value={selectedModel}
-            onChange={(e) => setSelectedModel(e.target.value)}
-            className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-rose-500"
-          >
-            {textModels.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name} ({m.provider})
-              </option>
-            ))}
-          </select>
+        <div className="w-full md:w-64">
+          <AIModelSelector
+            models={models}
+            selectedModel={selectedModel}
+            onSelectModel={setSelectedModel}
+            type="text"
+            moduleKey="mandala"
+            label="策划大模型"
+          />
         </div>
       </div>
 

@@ -77,73 +77,96 @@ async function withRetry<T>(
   throw lastError;
 }
 
-// 1. Text Completion with retry
+// 1. Text Completion with retry & multi-model fallback
 export async function callTextAI(params: {
   modelId: string;
   systemPrompt?: string;
   userPrompt: string;
   customModels?: AIModelConfig[];
 }): Promise<string> {
-  const model = getModelConfig(params.modelId, params.customModels, 'text');
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  // Collect candidate text models (requested first, then other active models)
+  const candidateModels: AIModelConfig[] = [];
+  const primaryModel = getModelConfig(params.modelId, params.customModels, 'text');
+  candidateModels.push(primaryModel);
 
-  const makeRequest = async (): Promise<string> => {
-    if (model.id === 'minimax-text' || model.protocol?.includes('Anthropic')) {
-      headers['x-api-key'] = model.apiKey;
-      headers['anthropic-version'] = '2023-06-01';
+  if (params.customModels) {
+    for (const m of params.customModels) {
+      if (m.type === 'text' && m.status === 'active' && m.id !== primaryModel.id && m.apiKey?.trim()) {
+        candidateModels.push(m);
+      }
+    }
+  }
 
-      const body: Record<string, any> = {
-        model: model.modelName || 'minimax-text-01',
-        max_tokens: 4096,
-        messages: [{ role: 'user', content: params.userPrompt }],
+  let lastError: any = null;
+
+  for (const model of candidateModels) {
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+
+      const makeRequest = async (): Promise<string> => {
+        if (model.id === 'minimax-text' || model.protocol?.includes('Anthropic')) {
+          headers['x-api-key'] = model.apiKey;
+          headers['anthropic-version'] = '2023-06-01';
+
+          const body: Record<string, any> = {
+            model: model.modelName || 'minimax-text-01',
+            max_tokens: 4096,
+            messages: [{ role: 'user', content: params.userPrompt }],
+          };
+          if (params.systemPrompt) body.system = params.systemPrompt;
+
+          const res = await fetch(model.baseUrl, { method: 'POST', headers, body: JSON.stringify(body) });
+          if (!res.ok) {
+            const errText = await res.text();
+            throw new Error(`MiniMax API 错误 (${res.status}): ${errText}`);
+          }
+          const data = await res.json();
+          if (data.content && Array.isArray(data.content)) {
+            return data.content.map((c: any) => c.text || '').join('');
+          }
+          if (data.choices?.[0]?.message?.content) return data.choices[0].message.content;
+          return JSON.stringify(data);
+        }
+
+        // OpenAI / Ark / Custom format
+        headers['Authorization'] = `Bearer ${model.apiKey}`;
+        const messages: any[] = [];
+        if (params.systemPrompt) messages.push({ role: 'system', content: params.systemPrompt });
+        messages.push({ role: 'user', content: params.userPrompt });
+
+        const targetModel =
+          model.modelName ||
+          (model.id === 'ark-text' ? 'ark-code-latest' : model.name || 'gpt-3.5-turbo');
+
+        const body: Record<string, any> = {
+          model: targetModel,
+          messages,
+          temperature: 0.7,
+        };
+        const endpoint = resolveChatUrl(model.baseUrl);
+
+        const res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
+        if (!res.ok) {
+          const errText = await res.text();
+          throw new Error(`${model.name} API 错误 (${res.status}): ${errText}`);
+        }
+        const data = await res.json();
+        const text = data.choices?.[0]?.message?.content;
+        if (!text) throw new Error('模型未返回有效文本内容');
+        return text;
       };
-      if (params.systemPrompt) body.system = params.systemPrompt;
 
-      const res = await fetch(model.baseUrl, { method: 'POST', headers, body: JSON.stringify(body) });
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`MiniMax API 错误 (${res.status}): ${errText}`);
-      }
-      const data = await res.json();
-      if (data.content && Array.isArray(data.content)) {
-        return data.content.map((c: any) => c.text || '').join('');
-      }
-      if (data.choices?.[0]?.message?.content) return data.choices[0].message.content;
-      return JSON.stringify(data);
+      return await withRetry(makeRequest, 1, 1000);
+    } catch (err: any) {
+      console.warn(`[callTextAI] Model ${model.name} (${model.id}) failed, trying next fallback:`, err.message);
+      lastError = err;
     }
+  }
 
-    // OpenAI / Ark / Custom format
-    headers['Authorization'] = `Bearer ${model.apiKey}`;
-    const messages: any[] = [];
-    if (params.systemPrompt) messages.push({ role: 'system', content: params.systemPrompt });
-    messages.push({ role: 'user', content: params.userPrompt });
-
-    const targetModel =
-      model.modelName ||
-      (model.id === 'ark-text' ? 'ark-code-latest' : model.name || 'gpt-3.5-turbo');
-
-    const body: Record<string, any> = {
-      model: targetModel,
-      messages,
-      temperature: 0.7,
-    };
-    const endpoint = resolveChatUrl(model.baseUrl);
-
-    const res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
-    if (!res.ok) {
-      const errText = await res.text();
-      throw new Error(`${model.name} API 错误 (${res.status}): ${errText}`);
-    }
-    const data = await res.json();
-    const text = data.choices?.[0]?.message?.content;
-    if (!text) throw new Error('模型未返回有效文本内容');
-    return text;
-  };
-
-  return withRetry(makeRequest, 2, 1000);
+  throw lastError || new Error('所有可用文本模型调用均失败，请在【大模型引擎配置】中检查 API Key');
 }
 
-// 2. Image Generation with retry
+// 2. Image Generation with retry & true multi-image concurrent output (1 / 2 / 4)
 export async function callImageAI(params: {
   modelId: string;
   prompt: string;
@@ -153,12 +176,14 @@ export async function callImageAI(params: {
   customModels?: AIModelConfig[];
 }): Promise<string[]> {
   const model = getModelConfig(params.modelId, params.customModels, 'image');
+  const targetCount = Math.min(Math.max(params.count || 1, 1), 4);
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${model.apiKey}`,
   };
 
-  const makeRequest = async (): Promise<string[]> => {
+  // Helper for single image request
+  const fetchSingleOrBatch = async (batchCount: number): Promise<string[]> => {
     if (model.id === 'minimax-image') {
       const res = await fetch(model.baseUrl, {
         method: 'POST',
@@ -166,7 +191,7 @@ export async function callImageAI(params: {
         body: JSON.stringify({
           prompt: params.prompt,
           aspect_ratio: params.aspectRatio || '1:1',
-          n: params.count || 1,
+          n: batchCount,
           image_url: params.refImageUrl || undefined,
         }),
       });
@@ -211,7 +236,7 @@ export async function callImageAI(params: {
       body: JSON.stringify({
         model: targetModel,
         prompt: params.prompt,
-        n: params.count || 1,
+        n: batchCount,
         size:
           params.aspectRatio === '16:9'
             ? '1024x576'
@@ -226,6 +251,39 @@ export async function callImageAI(params: {
       return data.data.map((d: any) => d.url).filter(Boolean);
     }
     throw new Error(`${model.name} 未返回图片链接`);
+  };
+
+  const makeRequest = async (): Promise<string[]> => {
+    // Attempt 1: Try single batch
+    try {
+      const results = await fetchSingleOrBatch(targetCount);
+      if (results.length >= targetCount) {
+        return results.slice(0, targetCount);
+      }
+      // If single request returned fewer images than requested, fetch the remaining via parallel calls
+      if (results.length > 0) {
+        const needed = targetCount - results.length;
+        const parallelPromises = Array.from({ length: needed }).map(() => fetchSingleOrBatch(1));
+        const extraBatches = await Promise.allSettled(parallelPromises);
+        for (const extra of extraBatches) {
+          if (extra.status === 'fulfilled' && extra.value.length > 0) {
+            results.push(extra.value[0]);
+          }
+        }
+        return results.slice(0, targetCount);
+      }
+    } catch (batchErr: any) {
+      // If batch with n > 1 failed (e.g. model rejected n > 1), fallback to parallel n=1 requests
+      if (targetCount > 1) {
+        const parallelPromises = Array.from({ length: targetCount }).map(() => fetchSingleOrBatch(1));
+        const parallelResults = await Promise.all(parallelPromises);
+        const merged = parallelResults.flat().filter(Boolean);
+        if (merged.length > 0) return merged.slice(0, targetCount);
+      }
+      throw batchErr;
+    }
+
+    throw new Error('未生成足够的图片');
   };
 
   return withRetry(makeRequest, 1, 2000);
